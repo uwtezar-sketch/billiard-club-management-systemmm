@@ -16,6 +16,7 @@ export const tables = pgTable("tables", {
   name: text("name").notNull(),
   type: text("type").notNull(), // 'snooker' | 'eightball' | 'playstation'
   isActive: boolean("is_active").notNull().default(false),
+  isArchived: boolean("is_archived").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
