@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { invoices, invoiceItems, sessions, tables, debtors, debts } from "@/db/schema";
-import { eq, desc, like, and, gte, lte } from "drizzle-orm";
+import { invoices, invoiceItems, sessions, tables, debtors, debts, cafeMenu } from "@/db/schema";
+import { eq, desc, like, and, gte, lte, inArray } from "drizzle-orm";
 import { toJalaali, generateInvoiceNumber } from "@/lib/jalaali";
 
 export async function GET(req: NextRequest) {
@@ -131,10 +131,33 @@ export async function POST(req: NextRequest) {
 
     // Insert cafe items
     if (cafeItems && cafeItems.length > 0) {
+      // آیتم‌های کافه ممکنه به یه cafeItemId قدیمی/حذف‌شده از منو اشاره کنن
+      // (مثلاً میز از قبل سفارش داشته و بعداً اون آیتم از منو حذف شده).
+      // چون cafe_item_id یه foreign key به cafe_menu هست، اگه شناسه معتبر نباشه
+      // کل فاکتور با خطا شکست می‌خوره. برای همین اول شناسه‌های معتبر رو چک می‌کنیم
+      // و برای هر آیتمی که دیگه تو منو نیست، فقط نام/قیمتش رو ثبت می‌کنیم (بدون لینک).
+      const requestedIds = [
+        ...new Set(
+          cafeItems
+            .map((item: { cafeItemId?: number }) => item.cafeItemId)
+            .filter((id: number | undefined): id is number => !!id)
+        ),
+      ];
+      const validIds = new Set(
+        requestedIds.length > 0
+          ? (
+              await db
+                .select({ id: cafeMenu.id })
+                .from(cafeMenu)
+                .where(inArray(cafeMenu.id, requestedIds as number[]))
+            ).map((r) => r.id)
+          : []
+      );
+
       await db.insert(invoiceItems).values(
         cafeItems.map((item: { cafeItemId?: number; name: string; quantity: number; unitPrice: number; totalPrice: number }) => ({
           invoiceId: invoice.id,
-          cafeItemId: item.cafeItemId || null,
+          cafeItemId: item.cafeItemId && validIds.has(item.cafeItemId) ? item.cafeItemId : null,
           name: item.name,
           quantity: item.quantity,
           unitPrice: item.unitPrice.toString(),
