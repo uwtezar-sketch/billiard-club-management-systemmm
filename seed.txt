@@ -1,0 +1,59 @@
+import { Pool } from "pg";
+
+const pool = new Pool({
+  connectionString: "postgresql://neondb_owner:npg_lyzS87gWZBhG@ep-mute-math-as2z2v3e.c-4.eu-central-1.aws.neon.tech/neondb?sslmode=require",
+});
+
+async function seed() {
+  const client = await pool.connect();
+  
+  try {
+    console.log("شروع اضافه کردن داده‌های اولیه...");
+
+    await client.query(`
+      INSERT INTO tables (name, type, is_active) VALUES
+        ('میز اسنوکر ۱', 'snooker', false),
+        ('میز اسنوکر ۲', 'snooker', false),
+        ('میز اسنوکر ۳', 'snooker', false),
+        ('میز ایت‌بال ۱', 'eightball', false),
+        ('میز ایت‌بال ۲', 'eightball', false),
+        ('پلی‌استیشن ۱', 'playstation', false),
+        ('پلی‌استیشن ۲', 'playstation', false)
+      ON CONFLICT DO NOTHING;
+    `);
+    console.log("✅ میزها اضافه شدن");
+
+    await client.query(`
+      INSERT INTO cafe_menu (name, price, is_active) VALUES
+        ('چای', 15000, true),
+        ('نسکافه', 25000, true),
+        ('آب معدنی', 10000, true),
+        ('دوغ', 15000, true),
+        ('نوشابه', 20000, true),
+        ('کاپوچینو', 35000, true),
+        ('چیپس', 25000, true),
+        ('ساندویچ', 80000, true)
+      ON CONFLICT DO NOTHING;
+    `);
+    console.log("✅ منوی کافه اضافه شد");
+
+    await client.query(`
+      INSERT INTO settings (key, value) VALUES
+        ('snooker_price', '150000'),
+        ('eightball_price', '100000'),
+        ('playstation_price', '80000')
+      ON CONFLICT (key) DO NOTHING;
+    `);
+    console.log("✅ تنظیمات قیمت اضافه شد");
+
+    console.log("🎉 همه داده‌ها با موفقیت اضافه شدن!");
+
+  } catch (err) {
+    console.error("❌ خطا:", err.message);
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+seed();
