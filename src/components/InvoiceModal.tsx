@@ -120,6 +120,7 @@ export default function InvoiceModal({
         ...prev,
         {
           id: 0,
+          cafeItemId: item.id,
           name: item.name,
           quantity: 1,
           unitPrice: item.price,
@@ -152,7 +153,7 @@ export default function InvoiceModal({
         pricePerHour: Number(session.pricePerHour),
         gamePrice,
         cafeItems: selectedCafeItems.map((o) => ({
-          cafeItemId: o.id || null,
+          cafeItemId: o.cafeItemId || null,
           name: o.name,
           quantity: o.quantity,
           unitPrice: Number(o.unitPrice),
