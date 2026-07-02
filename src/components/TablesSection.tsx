@@ -290,11 +290,16 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
     const table = tables.find((t) => t.id === tableId);
     if (!table?.activeSession) return;
 
+    // اگه از "مدیریت" نیومده باشیم، sessionModal.cafeOrders ممکنه خالی/قدیمی باشه.
+    // برای اطمینان، سفارش‌های کافه رو مستقیم از سرور می‌گیریم.
+    const res = await fetch(`/api/sessions/${table.activeSession.id}/cafe`);
+    const orders = await res.json();
+
     setInvoiceModal({
       open: true,
       session: table.activeSession,
       table,
-      cafeOrders: sessionModal.cafeOrders,
+      cafeOrders: Array.isArray(orders) ? orders : [],
       isPartial: false,
     });
     setConfirmStop({ open: false, tableId: null });
