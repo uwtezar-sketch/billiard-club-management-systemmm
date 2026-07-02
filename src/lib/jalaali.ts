@@ -1,11 +1,21 @@
 import * as jalaali from "jalaali-js";
 
+function getTehranYMD(date: Date): { y: number; m: number; d: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tehran",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const y = Number(parts.find((p) => p.type === "year")!.value);
+  const m = Number(parts.find((p) => p.type === "month")!.value);
+  const d = Number(parts.find((p) => p.type === "day")!.value);
+  return { y, m, d };
+}
+
 export function toJalaali(date: Date): string {
-  const { jy, jm, jd } = jalaali.toJalaali(
-    date.getFullYear(),
-    date.getMonth() + 1,
-    date.getDate()
-  );
+  const { y, m, d } = getTehranYMD(date);
+  const { jy, jm, jd } = jalaali.toJalaali(y, m, d);
   return `${jy}/${String(jm).padStart(2, "0")}/${String(jd).padStart(2, "0")}`;
 }
 
@@ -14,11 +24,8 @@ export function toJalaaliLabel(date: Date): string {
     "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
     "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
   ];
-  const { jy, jm, jd } = jalaali.toJalaali(
-    date.getFullYear(),
-    date.getMonth() + 1,
-    date.getDate()
-  );
+  const { y, m, d } = getTehranYMD(date);
+  const { jy, jm, jd } = jalaali.toJalaali(y, m, d);
   return `${jd} ${months[jm - 1]} ${jy}`;
 }
 
