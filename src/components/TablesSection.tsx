@@ -27,6 +27,7 @@ interface Session {
 
 interface CafeOrder {
   id: number;
+  cafeItemId: number | null;
   name: string;
   quantity: number;
   unitPrice: string;
