@@ -5,7 +5,11 @@ import { eq, isNull } from "drizzle-orm";
 
 export async function GET() {
   try {
-    const allTables = await db.select().from(tables).orderBy(tables.id);
+    const allTables = await db
+      .select()
+      .from(tables)
+      .where(eq(tables.isArchived, false))
+      .orderBy(tables.id);
     // Get active sessions for each table
     const activeSessions = await db
       .select()
@@ -44,7 +48,17 @@ export async function DELETE(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const id = parseInt(searchParams.get("id") || "0");
     if (!id) return NextResponse.json({ error: "شناسه معتبر نیست" }, { status: 400 });
-    await db.delete(tables).where(eq(tables.id, id));
+
+    // اگر میز سابقه‌ی سشن/فاکتور/رزرو داشته باشه، حذف واقعی به خاطر محدودیت
+    // foreign key با خطا مواجه میشه (تا تاریخچه‌ی مالی خراب نشه). به همین دلیل
+    // به‌جای حذف واقعی، میز رو "آرشیو" می‌کنیم: از لیست فعال محو میشه ولی
+    // سابقه‌ی سشن‌ها و فاکتورهاش دست‌نخورده باقی می‌مونه.
+    try {
+      await db.delete(tables).where(eq(tables.id, id));
+    } catch {
+      await db.update(tables).set({ isArchived: true }).where(eq(tables.id, id));
+    }
+
     return NextResponse.json({ success: true });
   } catch (e) {
     console.error(e);
