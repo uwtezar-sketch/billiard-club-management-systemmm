@@ -120,7 +120,13 @@ export default function SettingsSection() {
 
   async function handleDeleteTable() {
     if (!deleteTableId) return;
-    await fetch(`/api/tables?id=${deleteTableId}`, { method: "DELETE" });
+    const res = await fetch(`/api/tables?id=${deleteTableId}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.error || "خطا در حذف میز/دستگاه", "error");
+      setDeleteTableId(null);
+      return;
+    }
     showToast("میز/دستگاه حذف شد", "success");
     setDeleteTableId(null);
     fetchData();
