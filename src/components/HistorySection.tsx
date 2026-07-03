@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Modal from "./Modal";
+import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./Toast";
 import { formatPrice, formatDuration } from "@/lib/jalaali";
 
@@ -67,6 +68,7 @@ export default function HistorySection() {
   const [typeFilter, setTypeFilter] = useState("");
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deleteInvoiceId, setDeleteInvoiceId] = useState<number | null>(null);
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -96,6 +98,21 @@ export default function HistorySection() {
     showToast("فاکتور تسویه شد", "success");
     fetchInvoices();
     setSelectedInvoice(null);
+  }
+
+  async function handleDeleteInvoice() {
+    if (!deleteInvoiceId) return;
+    const res = await fetch(`/api/invoices/${deleteInvoiceId}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.error || "خطا در حذف فاکتور", "error");
+      setDeleteInvoiceId(null);
+      return;
+    }
+    showToast("فاکتور حذف شد", "success");
+    setDeleteInvoiceId(null);
+    setSelectedInvoice(null);
+    fetchInvoices();
   }
 
   return (
@@ -285,9 +302,24 @@ export default function HistorySection() {
                 ✅ تسویه این فاکتور
               </button>
             )}
+
+            <button
+              className="btn btn-danger btn-full"
+              onClick={() => setDeleteInvoiceId(selectedInvoice.id)}
+            >
+              🗑️ حذف این فاکتور
+            </button>
           </div>
         )}
       </Modal>
+
+      <ConfirmDialog
+        open={!!deleteInvoiceId}
+        message="آیا از حذف این فاکتور مطمئنید؟ این کار قابل بازگشت نیست."
+        onConfirm={handleDeleteInvoice}
+        onCancel={() => setDeleteInvoiceId(null)}
+        danger
+      />
     </div>
   );
 }
