@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "./Toast";
-import { formatPrice, todayJalaali, formatDuration } from "@/lib/jalaali";
+import { formatPrice, formatDuration } from "@/lib/jalaali";
 
 interface TableStat {
   id: number;
@@ -27,41 +27,60 @@ interface Invoice {
   issuedAt: string;
 }
 
+interface DailyPoint {
+  date: string;
+  revenue: number;
+}
+
+interface CafeItemStat {
+  name: string;
+  quantity: number;
+  revenue: number;
+}
+
+interface HourStat {
+  hour: number;
+  count: number;
+}
+
+interface Analytics {
+  daily: DailyPoint[];
+  topCafeItems: CafeItemStat[];
+  busiestHours: HourStat[];
+}
+
+function jalaaliDay(date: string) {
+  const parts = date.split("/");
+  return Number(parts[2] || 0).toLocaleString("fa-IR");
+}
+
 export default function DashboardSection() {
   const { showToast } = useToast();
   const [tables, setTables] = useState<TableStat[]>([]);
   const [pendingInvoices, setPendingInvoices] = useState<Invoice[]>([]);
-  const [todayReport, setTodayReport] = useState<{
-    totalRevenue: number;
-    invoiceCount: number;
-    paidCount: number;
-    pendingCount: number;
-    debtCount: number;
-    totalBilliard: number;
-    totalPlaystation: number;
-    totalCafe: number;
-  } | null>(null);
   const [totalDebt, setTotalDebt] = useState(0);
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [range, setRange] = useState<"week" | "month">("week");
 
   const fetchAll = useCallback(async () => {
     try {
-      const [tablesRes, pendingRes, reportRes, debtorsRes] = await Promise.all([
+      const [tablesRes, pendingRes, debtorsRes, analyticsRes] = await Promise.all([
         fetch("/api/tables"),
         fetch("/api/invoices?status=pending"),
-        fetch(`/api/reports/daily?date=${todayJalaali()}`),
         fetch("/api/debtors"),
+        fetch(`/api/reports/analytics?range=${range}`),
       ]);
       setTables(await tablesRes.json());
       setPendingInvoices(await pendingRes.json());
-      setTodayReport(await reportRes.json());
       const debtors = await debtorsRes.json();
       if (Array.isArray(debtors)) {
         setTotalDebt(debtors.reduce((s: number, d: { totalDebt: string }) => s + Number(d.totalDebt), 0));
       }
+      setAnalytics(await analyticsRes.json());
     } catch {
       showToast("خطا در دریافت داشبورد", "error");
     }
-  }, [showToast]);
+  }, [showToast, range]);
 
   useEffect(() => {
     fetchAll();
@@ -71,6 +90,14 @@ export default function DashboardSection() {
 
   const activeTables = tables.filter((t) => t.isActive);
   const freeTables = tables.filter((t) => !t.isActive);
+
+  const maxDailyRevenue = analytics ? Math.max(1, ...analytics.daily.map((d) => d.revenue)) : 1;
+  const maxHourCount = analytics ? Math.max(1, ...analytics.busiestHours.map((h) => h.count)) : 1;
+  const maxCafeQty = analytics ? Math.max(1, ...analytics.topCafeItems.map((c) => c.quantity)) : 1;
+  const peakHour = analytics?.busiestHours.reduce(
+    (best, h) => (h.count > best.count ? h : best),
+    { hour: 0, count: 0 }
+  );
 
   return (
     <div className="space-y-4">
@@ -94,26 +121,117 @@ export default function DashboardSection() {
         </div>
       </div>
 
-      {/* Today Revenue */}
-      {todayReport && (
-        <div className="card">
-          <h3 className="font-bold text-slate-300 mb-3">📊 درآمد امروز</h3>
-          <div className="text-center mb-3">
-            <div className="text-3xl font-bold text-green-400">{formatPrice(todayReport.totalRevenue)}</div>
+      {/* Revenue Chart */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-slate-300">📈 نمودار فروش</h3>
+          <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
+            <button
+              onClick={() => setRange("week")}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+                range === "week" ? "bg-blue-600 text-white" : "text-slate-400"
+              }`}
+            >
+              هفتگی
+            </button>
+            <button
+              onClick={() => setRange("month")}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+                range === "month" ? "bg-blue-600 text-white" : "text-slate-400"
+              }`}
+            >
+              ماهانه
+            </button>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center text-sm">
-            <div className="bg-green-950/40 rounded-lg p-2 border border-green-800">
-              <div className="text-green-400 font-bold">{formatPrice(todayReport.totalBilliard)}</div>
-              <div className="text-slate-400 text-xs">بیلیارد</div>
+        </div>
+
+        {analytics && analytics.daily.length > 0 ? (
+          <>
+            <div className="flex items-end gap-1 h-36 overflow-x-auto">
+              {analytics.daily.map((d) => {
+                const pct = Math.max(4, Math.round((d.revenue / maxDailyRevenue) * 100));
+                const isMax = d.revenue === maxDailyRevenue && d.revenue > 0;
+                return (
+                  <div key={d.date} className="flex-1 min-w-[10px] flex flex-col items-center justify-end h-full">
+                    <div
+                      className={`w-full rounded-t-sm ${isMax ? "bg-green-400" : "bg-blue-600"}`}
+                      style={{ height: `${pct}%` }}
+                      title={`${d.date} — ${formatPrice(d.revenue)}`}
+                    />
+                    <div className="text-[10px] text-slate-500 mt-1">{jalaaliDay(d.date)}</div>
+                  </div>
+                );
+              })}
             </div>
-            <div className="bg-purple-950/40 rounded-lg p-2 border border-purple-800">
-              <div className="text-purple-400 font-bold">{formatPrice(todayReport.totalPlaystation)}</div>
-              <div className="text-slate-400 text-xs">پلی‌استیشن</div>
+            <div className="text-center mt-3 text-sm text-slate-400">
+              پرفروش‌ترین روز:{" "}
+              <span className="text-green-400 font-bold">
+                {formatPrice(Math.max(...analytics.daily.map((d) => d.revenue)))}
+              </span>
             </div>
-            <div className="bg-amber-950/40 rounded-lg p-2 border border-amber-800">
-              <div className="text-amber-400 font-bold">{formatPrice(todayReport.totalCafe)}</div>
-              <div className="text-slate-400 text-xs">کافه</div>
-            </div>
+          </>
+        ) : (
+          <div className="text-center text-slate-500 text-sm py-6">هنوز داده‌ای برای نمایش نیست</div>
+        )}
+      </div>
+
+      {/* Busiest Hours */}
+      {analytics && peakHour && peakHour.count > 0 && (
+        <div className="card">
+          <h3 className="font-bold text-slate-300 mb-3">⏰ شلوغ‌ترین ساعات باشگاه</h3>
+          <div className="flex items-end gap-[2px] h-24">
+            {analytics.busiestHours.map((h) => {
+              const pct = h.count > 0 ? Math.max(6, Math.round((h.count / maxHourCount) * 100)) : 2;
+              const isPeak = h.hour === peakHour.hour;
+              return (
+                <div key={h.hour} className="flex-1 flex flex-col items-center justify-end h-full">
+                  <div
+                    className={`w-full rounded-t-sm ${isPeak ? "bg-amber-400" : "bg-slate-600"}`}
+                    style={{ height: `${pct}%` }}
+                    title={`ساعت ${h.hour} — ${h.count} فاکتور`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex justify-between text-[10px] text-slate-500 mt-1 px-1">
+            <span>۰</span>
+            <span>۶</span>
+            <span>۱۲</span>
+            <span>۱۸</span>
+            <span>۲۳</span>
+          </div>
+          <div className="text-center mt-2 text-sm text-slate-400">
+            شلوغ‌ترین ساعت:{" "}
+            <span className="text-amber-400 font-bold">
+              {peakHour.hour.toLocaleString("fa-IR")} تا {((peakHour.hour + 1) % 24).toLocaleString("fa-IR")}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Top Cafe Items */}
+      {analytics && analytics.topCafeItems.length > 0 && (
+        <div className="card">
+          <h3 className="font-bold text-slate-300 mb-3">☕ پرفروش‌ترین آیتم‌های کافه</h3>
+          <div className="space-y-2">
+            {analytics.topCafeItems.map((item, idx) => (
+              <div key={item.name} className="flex items-center gap-2">
+                <div className="text-slate-500 text-xs w-4">{(idx + 1).toLocaleString("fa-IR")}</div>
+                <div className="flex-1">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-white">{item.name}</span>
+                    <span className="text-amber-400">{item.quantity.toLocaleString("fa-IR")} عدد</span>
+                  </div>
+                  <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-amber-500 rounded-full"
+                      style={{ width: `${Math.round((item.quantity / maxCafeQty) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
