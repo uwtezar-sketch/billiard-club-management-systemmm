@@ -40,6 +40,8 @@ export default function DebtorsSection() {
   });
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [editDebtorModal, setEditDebtorModal] = useState<Debtor | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", phone: "", notes: "" });
 
   const [debtorForm, setDebtorForm] = useState({ name: "", phone: "", notes: "" });
   const [debtForm, setDebtForm] = useState({ amount: "", description: "", jalaaliDate: todayJalaali() });
@@ -122,6 +124,27 @@ export default function DebtorsSection() {
     showToast("بدهکار حذف شد", "success");
     setDeleteId(null);
     fetchData();
+  }
+
+  async function handleEditDebtor() {
+    if (!editDebtorModal || !editForm.name) { showToast("نام الزامی است", "error"); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/debtors/${editDebtorModal.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editForm.name, phone: editForm.phone || null, notes: editForm.notes || null }),
+      });
+      if (res.ok) {
+        showToast("اطلاعات بدهکار بروزرسانی شد", "success");
+        setEditDebtorModal(null);
+        fetchData();
+      } else {
+        showToast("خطا در ویرایش بدهکار", "error");
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   const totalAllDebts = debtors.reduce((s, d) => s + Number(d.totalDebt), 0);
@@ -242,6 +265,12 @@ export default function DebtorsSection() {
                         </button>
                       )}
                       <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => { setEditForm({ name: debtor.name, phone: debtor.phone || "", notes: debtor.notes || "" }); setEditDebtorModal(debtor); }}
+                      >
+                        ✏️ ویرایش
+                      </button>
+                      <button
                         className="btn btn-danger btn-sm"
                         onClick={() => setDeleteId(debtor.id)}
                       >
@@ -296,6 +325,28 @@ export default function DebtorsSection() {
           <div className="flex gap-3">
             <button className="btn btn-secondary flex-1" onClick={() => setAddDebtModal(null)}>انصراف</button>
             <button className="btn btn-danger flex-1" onClick={handleAddDebt} disabled={loading}>ثبت بدهی</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Debtor Modal */}
+      <Modal open={!!editDebtorModal} onClose={() => setEditDebtorModal(null)} title="ویرایش بدهکار">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">نام *</label>
+            <input className="form-input" value={editForm.name} onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">شماره تلفن</label>
+            <input className="form-input" type="tel" dir="ltr" value={editForm.phone} onChange={(e) => setEditForm((p) => ({ ...p, phone: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">یادداشت</label>
+            <input className="form-input" value={editForm.notes} onChange={(e) => setEditForm((p) => ({ ...p, notes: e.target.value }))} />
+          </div>
+          <div className="flex gap-3">
+            <button className="btn btn-secondary flex-1" onClick={() => setEditDebtorModal(null)}>انصراف</button>
+            <button className="btn btn-primary flex-1" onClick={handleEditDebtor} disabled={loading}>ذخیره</button>
           </div>
         </div>
       </Modal>
