@@ -41,6 +41,12 @@ interface Invoice {
   items: InvoiceItem[];
 }
 
+interface Debtor {
+  id: number;
+  name: string;
+  phone: string | null;
+}
+
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   paid: { label: "تسویه شده", color: "#16a34a" },
   pending: { label: "در انتظار", color: "#d97706" },
@@ -70,6 +76,14 @@ export default function HistorySection() {
   const [loading, setLoading] = useState(false);
   const [deleteInvoiceId, setDeleteInvoiceId] = useState<number | null>(null);
 
+  const [editMethod, setEditMethod] = useState<string>("cash");
+  const [editStatus, setEditStatus] = useState<string>("pending");
+  const [debtorsList, setDebtorsList] = useState<Debtor[]>([]);
+  const [editDebtorId, setEditDebtorId] = useState<number | "">("");
+  const [editNewDebtorName, setEditNewDebtorName] = useState("");
+  const [editNewDebtorPhone, setEditNewDebtorPhone] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
     try {
@@ -89,16 +103,21 @@ export default function HistorySection() {
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
-  async function handleSettleInvoice(id: number) {
-    await fetch(`/api/invoices/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "paid" }),
-    });
-    showToast("فاکتور تسویه شد", "success");
-    fetchInvoices();
-    setSelectedInvoice(null);
-  }
+  useEffect(() => {
+    if (selectedInvoice) {
+      setEditMethod(selectedInvoice.paymentMethod || "cash");
+      setEditStatus(selectedInvoice.status === "debt" ? "pending" : selectedInvoice.status);
+      setEditDebtorId("");
+      setEditNewDebtorName(selectedInvoice.customerName || "");
+      setEditNewDebtorPhone(selectedInvoice.customerPhone || "");
+    }
+  }, [selectedInvoice]);
+
+  useEffect(() => {
+    if (editMethod === "debt" && selectedInvoice?.status !== "debt") {
+      fetch("/api/debtors").then((r) => r.json()).then((d) => setDebtorsList(Array.isArray(d) ? d : []));
+    }
+  }, [editMethod, selectedInvoice]);
 
   async function handleDeleteInvoice() {
     if (!deleteInvoiceId) return;
@@ -113,6 +132,46 @@ export default function HistorySection() {
     setDeleteInvoiceId(null);
     setSelectedInvoice(null);
     fetchInvoices();
+  }
+
+  async function handleSavePaymentEdit() {
+    if (!selectedInvoice) return;
+    const body: Record<string, unknown> = { paymentMethod: editMethod };
+
+    const movingToDebt = editMethod === "debt" && selectedInvoice.status !== "debt";
+    if (movingToDebt) {
+      if (editDebtorId) {
+        body.debtorId = editDebtorId;
+      } else {
+        if (!editNewDebtorName) {
+          showToast("نام بدهکار را وارد کنید", "error");
+          return;
+        }
+        body.newDebtorName = editNewDebtorName;
+        body.newDebtorPhone = editNewDebtorPhone || null;
+      }
+    } else if (editMethod !== "debt") {
+      body.status = editStatus;
+    }
+
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`/api/invoices/${selectedInvoice.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error || "خطا در بروزرسانی فاکتور", "error");
+        return;
+      }
+      showToast("فاکتور بروزرسانی شد", "success");
+      setSelectedInvoice(null);
+      fetchInvoices();
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
   return (
@@ -234,7 +293,6 @@ export default function HistorySection() {
               {selectedInvoice.durationMinutes && (
                 <div><span className="text-slate-400">مدت:</span> <span className="text-white">{formatDuration(selectedInvoice.durationMinutes)}</span></div>
               )}
-              <div><span className="text-slate-400">روش:</span> <span className="text-white">{PAYMENT_MAP[selectedInvoice.paymentMethod || ""] || "—"}</span></div>
             </div>
 
             <div className="space-y-2">
@@ -277,31 +335,88 @@ export default function HistorySection() {
               </div>
             )}
 
-            <div className="flex items-center gap-2">
-              <span
-                className="badge"
-                style={{
-                  background: (STATUS_MAP[selectedInvoice.status]?.color || "#64748b") + "33",
-                  color: STATUS_MAP[selectedInvoice.status]?.color || "#64748b",
-                }}
-              >
-                {STATUS_MAP[selectedInvoice.status]?.label || selectedInvoice.status}
-              </span>
-              {selectedInvoice.settledAt && (
-                <span className="text-xs text-slate-400">
-                  تسویه: {new Date(selectedInvoice.settledAt).toLocaleDateString("fa-IR")}
-                </span>
-              )}
-            </div>
+            {/* ویرایش روش پرداخت و وضعیت تسویه */}
+            <div className="bg-slate-800 rounded-lg p-3 space-y-3">
+              <div>
+                <div className="text-xs text-slate-400 mb-2">روش پرداخت</div>
+                <div className="flex gap-2">
+                  {(["cash", "card", "debt"] as const).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setEditMethod(m)}
+                      className={`btn btn-sm flex-1 ${editMethod === m ? "btn-primary" : "btn-secondary"}`}
+                    >
+                      {PAYMENT_MAP[m]}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            {selectedInvoice.status === "pending" && (
+              {editMethod === "debt" && selectedInvoice.status !== "debt" && (
+                <div className="space-y-2">
+                  <div className="text-xs text-slate-400">انتخاب بدهکار</div>
+                  <select
+                    className="form-input"
+                    value={editDebtorId}
+                    onChange={(e) => setEditDebtorId(e.target.value ? Number(e.target.value) : "")}
+                  >
+                    <option value="">+ بدهکار جدید</option>
+                    {debtorsList.map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}{d.phone ? ` (${d.phone})` : ""}</option>
+                    ))}
+                  </select>
+                  {!editDebtorId && (
+                    <>
+                      <input
+                        className="form-input"
+                        placeholder="نام بدهکار جدید"
+                        value={editNewDebtorName}
+                        onChange={(e) => setEditNewDebtorName(e.target.value)}
+                      />
+                      <input
+                        className="form-input"
+                        placeholder="شماره تلفن (اختیاری)"
+                        dir="ltr"
+                        value={editNewDebtorPhone}
+                        onChange={(e) => setEditNewDebtorPhone(e.target.value)}
+                      />
+                    </>
+                  )}
+                </div>
+              )}
+
+              {editMethod === "debt" && selectedInvoice.status === "debt" && (
+                <div className="text-xs text-amber-400">این فاکتور همین الان هم روی بدهکاری ثبت شده.</div>
+              )}
+
+              {editMethod !== "debt" && (
+                <div>
+                  <div className="text-xs text-slate-400 mb-2">وضعیت تسویه</div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setEditStatus("pending")}
+                      className={`btn btn-sm flex-1 ${editStatus === "pending" ? "btn-primary" : "btn-secondary"}`}
+                    >
+                      ⏳ در انتظار
+                    </button>
+                    <button
+                      onClick={() => setEditStatus("paid")}
+                      className={`btn btn-sm flex-1 ${editStatus === "paid" ? "btn-success" : "btn-secondary"}`}
+                    >
+                      ✅ تسویه شده
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <button
-                className="btn btn-success btn-full"
-                onClick={() => handleSettleInvoice(selectedInvoice.id)}
+                className="btn btn-primary btn-full"
+                onClick={handleSavePaymentEdit}
+                disabled={savingEdit}
               >
-                ✅ تسویه این فاکتور
+                💾 ذخیره تغییرات پرداخت
               </button>
-            )}
+            </div>
 
             <button
               className="btn btn-danger btn-full"
