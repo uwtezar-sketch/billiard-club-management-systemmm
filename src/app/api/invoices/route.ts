@@ -180,18 +180,19 @@ export async function POST(req: NextRequest) {
             .set({ totalDebt: (Number(debtor.totalDebt) + totalAmount).toString() })
             .where(eq(debtors.id, debtorId));
         }
-      } else {
+            } else {
         // Create new debtor
         const [newDebtor] = await db
           .insert(debtors)
           .values({
-            name: customerName || "نامشخص",
-            phone: customerPhone || null,
+            name: body.newDebtorName || customerName || "نامشخص",
+            phone: body.newDebtorPhone || customerPhone || null,
             totalDebt: totalAmount.toString(),
           })
           .returning();
         debtorId = newDebtor.id;
       }
+
 
       await db.insert(debts).values({
         debtorId,
