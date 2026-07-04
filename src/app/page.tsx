@@ -9,9 +9,10 @@ import DailyReportSection from "@/components/DailyReportSection";
 import SettingsSection from "@/components/SettingsSection";
 import DashboardSection from "@/components/DashboardSection";
 import CafeSection from "@/components/CafeSection";
+import UsersSection from "@/components/UsersSection";
 import { todayJalaali } from "@/lib/jalaali";
 
-type Tab = "tables" | "cafe" | "reservations" | "debtors" | "history" | "report" | "dashboard" | "settings";
+type Tab = "tables" | "cafe" | "reservations" | "debtors" | "history" | "report" | "dashboard" | "settings" | "users";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "tables", label: "میزها", icon: "🎱" },
@@ -21,6 +22,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "history", label: "تاریخچه", icon: "📂" },
   { id: "report", label: "گزارش", icon: "📊" },
   { id: "dashboard", label: "داشبورد", icon: "📈" },
+  { id: "users", label: "کاربران", icon: "👤" },
   { id: "settings", label: "تنظیمات", icon: "⚙️" },
 ];
 
@@ -28,6 +30,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("tables");
   const [currentTime, setCurrentTime] = useState("");
   const [currentDate, setCurrentDate] = useState("");
+  const [role, setRole] = useState<"admin" | "employee" | null>(null);
 
   useEffect(() => {
     const update = () => {
@@ -39,6 +42,26 @@ export default function Home() {
     const interval = setInterval(update, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setRole(d?.role || null))
+      .catch(() => setRole(null));
+  }, []);
+
+  useEffect(() => {
+    if (role === "employee" && activeTab !== "tables") {
+      setActiveTab("tables");
+    }
+  }, [role, activeTab]);
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
+
+  const visibleTabs = role === "employee" ? TABS.filter((t) => t.id === "tables") : TABS;
 
   return (
     <ToastProvider>
@@ -59,9 +82,18 @@ export default function Home() {
               </h1>
               <p className="text-xs text-slate-400">سامانه مدیریت هوشمند</p>
             </div>
-            <div className="text-left">
-              <div className="text-lg font-bold text-blue-400">{currentTime}</div>
-              <div className="text-xs text-slate-500">{currentDate}</div>
+            <div className="flex items-center gap-3">
+              <div className="text-left">
+                <div className="text-lg font-bold text-blue-400">{currentTime}</div>
+                <div className="text-xs text-slate-500">{currentDate}</div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="text-slate-400 text-xs border border-slate-700 rounded-lg px-2 py-1"
+                title="خروج"
+              >
+                🚪 خروج
+              </button>
             </div>
           </div>
         </header>
@@ -75,6 +107,7 @@ export default function Home() {
           {activeTab === "history" && <HistorySection />}
           {activeTab === "report" && <DailyReportSection />}
           {activeTab === "dashboard" && <DashboardSection />}
+          {activeTab === "users" && <UsersSection />}
           {activeTab === "settings" && <SettingsSection />}
         </main>
 
@@ -91,7 +124,7 @@ export default function Home() {
           }}
         >
           <div className="flex justify-around overflow-x-auto">
-            {TABS.map((tab) => (
+            {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 className={`nav-item flex-shrink-0 ${activeTab === tab.id ? "active" : ""}`}
