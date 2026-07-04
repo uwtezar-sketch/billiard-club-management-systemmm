@@ -10,6 +10,15 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
+// ─── Users (کاربران سیستم) ─────────────────────────────────────────────────
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  role: text("role").notNull(), // 'admin' | 'employee'
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // ─── Tables (میزها) ───────────────────────────────────────────────────────────
 export const tables = pgTable("tables", {
   id: serial("id").primaryKey(),
