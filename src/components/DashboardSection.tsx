@@ -28,8 +28,11 @@ interface Invoice {
 }
 
 interface DailyPoint {
-  date: string;
+  date: string; // "1405/04/12"
   revenue: number;
+  count: number;
+  weekday: string;
+  isWeekend: boolean;
 }
 
 interface CafeItemStat {
@@ -46,6 +49,11 @@ interface PeakCell {
 
 interface Analytics {
   daily: DailyPoint[];
+  totalRevenue: number;
+  totalInvoices: number;
+  avgDailyRevenue: number;
+  bestDay: DailyPoint;
+  changePercent: number;
   topCafeItems: CafeItemStat[];
   heatmap: number[][];
   dayLabels: string[];
@@ -147,6 +155,29 @@ export default function DashboardSection() {
 
         {analytics && analytics.daily.length > 0 ? (
           <>
+            {/* Summary stats */}
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              <div className="bg-slate-800 rounded-lg p-2 text-center">
+                <div className="text-[10px] text-slate-500">مجموع فروش</div>
+                <div className="text-sm font-bold text-green-400 mt-1">{formatPrice(analytics.totalRevenue)}</div>
+              </div>
+              <div className="bg-slate-800 rounded-lg p-2 text-center">
+                <div className="text-[10px] text-slate-500">میانگین روزانه</div>
+                <div className="text-sm font-bold text-white mt-1">{formatPrice(analytics.avgDailyRevenue)}</div>
+              </div>
+              <div className="bg-slate-800 rounded-lg p-2 text-center">
+                <div className="text-[10px] text-slate-500">نسبت به دوره قبل</div>
+                <div
+                  className={`text-sm font-bold mt-1 ${
+                    analytics.changePercent > 0 ? "text-green-400" : analytics.changePercent < 0 ? "text-red-400" : "text-slate-400"
+                  }`}
+                >
+                  {analytics.changePercent > 0 ? "▲" : analytics.changePercent < 0 ? "▼" : "•"}{" "}
+                  {Math.abs(analytics.changePercent).toLocaleString("fa-IR")}٪
+                </div>
+              </div>
+            </div>
+
             <div className="flex items-end gap-1 h-36 overflow-x-auto">
               {analytics.daily.map((d) => {
                 const pct = Math.max(4, Math.round((d.revenue / maxDailyRevenue) * 100));
@@ -154,19 +185,31 @@ export default function DashboardSection() {
                 return (
                   <div key={d.date} className="flex-1 min-w-[10px] flex flex-col items-center justify-end h-full">
                     <div
-                      className={`w-full rounded-t-sm ${isMax ? "bg-green-400" : "bg-blue-600"}`}
+                      className={`w-full rounded-t-sm ${
+                        isMax ? "bg-green-400" : d.isWeekend ? "bg-purple-500" : "bg-blue-600"
+                      }`}
                       style={{ height: `${pct}%` }}
-                      title={`${d.date} — ${formatPrice(d.revenue)}`}
+                      title={`${d.date} (${d.weekday}) — ${formatPrice(d.revenue)} — ${d.count} فاکتور`}
                     />
-                    <div className="text-[10px] text-slate-500 mt-1">{jalaaliDay(d.date)}</div>
+                    <div className={`text-[10px] mt-1 ${d.isWeekend ? "text-purple-300" : "text-slate-500"}`}>
+                      {d.weekday}
+                    </div>
+                    <div className="text-[9px] text-slate-600">{jalaaliDay(d.date)}</div>
                   </div>
                 );
               })}
             </div>
-            <div className="text-center mt-3 text-sm text-slate-400">
+
+            <div className="flex items-center justify-center gap-3 mt-3 text-[10px] text-slate-500">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-600 inline-block" /> عادی</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500 inline-block" /> جمعه</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400 inline-block" /> پرفروش‌ترین</span>
+            </div>
+
+            <div className="text-center mt-2 text-sm text-slate-400">
               پرفروش‌ترین روز:{" "}
               <span className="text-green-400 font-bold">
-                {formatPrice(Math.max(...analytics.daily.map((d) => d.revenue)))}
+                {analytics.bestDay.weekday} {jalaaliDay(analytics.bestDay.date)} — {formatPrice(analytics.bestDay.revenue)}
               </span>
             </div>
           </>
