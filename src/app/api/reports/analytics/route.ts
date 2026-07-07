@@ -14,6 +14,21 @@ function getTehranHour(date: Date): number {
   return Number(raw) % 24;
 }
 
+const DAY_LABELS = ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه"];
+const WEEKDAY_TO_INDEX: Record<string, number> = {
+  Sat: 0, Sun: 1, Mon: 2, Tue: 3, Wed: 4, Thu: 5, Fri: 6,
+};
+
+function getTehranDayIndex(date: Date): number {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tehran",
+    weekday: "short",
+  }).format(date);
+  return WEEKDAY_TO_INDEX[weekday] ?? 0;
+}
+
+const BLOCK_LABELS = ["۰-۴", "۴-۸", "۸-۱۲", "۱۲-۱۶", "۱۶-۲۰", "۲۰-۲۴"];
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -25,7 +40,6 @@ export async function GET(req: NextRequest) {
       .from(invoices)
       .where(gte(invoices.issuedAt, cutoff));
 
-    // Daily revenue (تمام فاکتورهای صادرشده در هر روز، صرف‌نظر از وضعیت تسویه)
     const dayLabels: string[] = [];
     for (let i = range - 1; i >= 0; i--) {
       const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
@@ -46,15 +60,23 @@ export async function GET(req: NextRequest) {
       revenue: revenueByDay.get(label) || 0,
     }));
 
-    // شلوغ‌ترین ساعات (بر اساس زمان واقعی صدور فاکتور، به وقت تهران)
-    const hourCounts = new Array(24).fill(0);
+    const heatmap: number[][] = Array.from({ length: 7 }, () => new Array(6).fill(0));
     for (const inv of recentInvoices) {
-      const h = getTehranHour(new Date(inv.issuedAt));
-      hourCounts[h]++;
+      const d = new Date(inv.issuedAt);
+      const day = getTehranDayIndex(d);
+      const hour = getTehranHour(d);
+      const block = Math.floor(hour / 4);
+      heatmap[day][block]++;
     }
-    const busiestHours = hourCounts.map((count, hour) => ({ hour, count }));
+    let peakCell = { day: 0, block: 0, count: 0 };
+    for (let day = 0; day < 7; day++) {
+      for (let block = 0; block < 6; block++) {
+        if (heatmap[day][block] > peakCell.count) {
+          peakCell = { day, block, count: heatmap[day][block] };
+        }
+      }
+    }
 
-    // پرفروش‌ترین آیتم‌های کافه
     const invoiceIds = recentInvoices.map((i) => i.id);
     let topCafeItems: { name: string; quantity: number; revenue: number }[] = [];
     if (invoiceIds.length > 0) {
@@ -76,7 +98,14 @@ export async function GET(req: NextRequest) {
         .slice(0, 6);
     }
 
-    return NextResponse.json({ daily, topCafeItems, busiestHours });
+    return NextResponse.json({
+      daily,
+      topCafeItems,
+      heatmap,
+      dayLabels: DAY_LABELS,
+      blockLabels: BLOCK_LABELS,
+      peakCell,
+    });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "خطا در دریافت آمار" }, { status: 500 });
