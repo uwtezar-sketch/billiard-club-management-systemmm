@@ -38,15 +38,19 @@ interface CafeItemStat {
   revenue: number;
 }
 
-interface HourStat {
-  hour: number;
+interface PeakCell {
+  day: number;
+  block: number;
   count: number;
 }
 
 interface Analytics {
   daily: DailyPoint[];
   topCafeItems: CafeItemStat[];
-  busiestHours: HourStat[];
+  heatmap: number[][];
+  dayLabels: string[];
+  blockLabels: string[];
+  peakCell: PeakCell;
 }
 
 function jalaaliDay(date: string) {
@@ -92,12 +96,8 @@ export default function DashboardSection() {
   const freeTables = tables.filter((t) => !t.isActive);
 
   const maxDailyRevenue = analytics ? Math.max(1, ...analytics.daily.map((d) => d.revenue)) : 1;
-  const maxHourCount = analytics ? Math.max(1, ...analytics.busiestHours.map((h) => h.count)) : 1;
+  const maxHeatCount = analytics ? Math.max(1, ...analytics.heatmap.flat()) : 1;
   const maxCafeQty = analytics ? Math.max(1, ...analytics.topCafeItems.map((c) => c.quantity)) : 1;
-  const peakHour = analytics?.busiestHours.reduce(
-    (best, h) => (h.count > best.count ? h : best),
-    { hour: 0, count: 0 }
-  );
 
   return (
     <div className="space-y-4">
@@ -175,36 +175,62 @@ export default function DashboardSection() {
         )}
       </div>
 
-      {/* Busiest Hours */}
-      {analytics && peakHour && peakHour.count > 0 && (
+      {/* Busiest Hours Heatmap */}
+      {analytics && analytics.peakCell.count > 0 && (
         <div className="card">
-          <h3 className="font-bold text-slate-300 mb-3">⏰ شلوغ‌ترین ساعات باشگاه</h3>
-          <div className="flex items-end gap-[2px] h-24">
-            {analytics.busiestHours.map((h) => {
-              const pct = h.count > 0 ? Math.max(6, Math.round((h.count / maxHourCount) * 100)) : 2;
-              const isPeak = h.hour === peakHour.hour;
-              return (
-                <div key={h.hour} className="flex-1 flex flex-col items-center justify-end h-full">
-                  <div
-                    className={`w-full rounded-t-sm ${isPeak ? "bg-amber-400" : "bg-slate-600"}`}
-                    style={{ height: `${pct}%` }}
-                    title={`ساعت ${h.hour} — ${h.count} فاکتور`}
-                  />
-                </div>
-              );
-            })}
+          <h3 className="font-bold text-slate-300 mb-3">🔥 شلوغ‌ترین ساعات باشگاه</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse" style={{ minWidth: "340px" }}>
+              <thead>
+                <tr>
+                  <th className="text-[10px] text-slate-500 font-normal text-right pl-1"> </th>
+                  {analytics.blockLabels.map((label) => (
+                    <th key={label} className="text-[9px] text-slate-500 font-normal pb-1 text-center">
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {analytics.dayLabels.map((dayLabel, dayIdx) => (
+                  <tr key={dayLabel}>
+                    <td className="text-[10px] text-slate-400 pl-2 whitespace-nowrap">{dayLabel}</td>
+                    {analytics.heatmap[dayIdx].map((count, blockIdx) => {
+                      const intensity = count / maxHeatCount;
+                      const isPeak = dayIdx === analytics.peakCell.day && blockIdx === analytics.peakCell.block && count > 0;
+                      return (
+                        <td key={blockIdx} className="p-[2px]">
+                          <div
+                            className="rounded-md flex items-center justify-center"
+                            style={{
+                              height: "26px",
+                              background: isPeak
+                                ? "#f59e0b"
+                                : count === 0
+                                ? "#1e293b"
+                                : `rgba(37, 99, 235, ${0.15 + intensity * 0.85})`,
+                              border: isPeak ? "1px solid #fbbf24" : "1px solid transparent",
+                            }}
+                            title={`${dayLabel} ${analytics.blockLabels[blockIdx]} — ${count} فاکتور`}
+                          >
+                            {count > 0 && (
+                              <span className={`text-[10px] font-bold ${isPeak ? "text-slate-900" : "text-white"}`}>
+                                {count.toLocaleString("fa-IR")}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div className="flex justify-between text-[10px] text-slate-500 mt-1 px-1">
-            <span>۰</span>
-            <span>۶</span>
-            <span>۱۲</span>
-            <span>۱۸</span>
-            <span>۲۳</span>
-          </div>
-          <div className="text-center mt-2 text-sm text-slate-400">
-            شلوغ‌ترین ساعت:{" "}
+          <div className="text-center mt-3 text-sm text-slate-400">
+            شلوغ‌ترین زمان:{" "}
             <span className="text-amber-400 font-bold">
-              {peakHour.hour.toLocaleString("fa-IR")} تا {((peakHour.hour + 1) % 24).toLocaleString("fa-IR")}
+              {analytics.dayLabels[analytics.peakCell.day]}، ساعت {analytics.blockLabels[analytics.peakCell.block]}
             </span>
           </div>
         </div>
