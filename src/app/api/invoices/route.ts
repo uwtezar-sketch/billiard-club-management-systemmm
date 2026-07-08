@@ -12,16 +12,19 @@ export async function GET(req: NextRequest) {
     const date = searchParams.get("date");
     const tableType = searchParams.get("tableType");
     const paymentMethod = searchParams.get("paymentMethod");
-    const limit = parseInt(searchParams.get("limit") || "100");
+    const days = searchParams.get("days");
+    const limit = parseInt(searchParams.get("limit") || "200");
     const offset = parseInt(searchParams.get("offset") || "0");
-
-    let query = db.select().from(invoices);
 
     const conditions = [];
     if (status) conditions.push(eq(invoices.status, status));
     if (date) conditions.push(eq(invoices.jalaaliDate, date));
     if (tableType) conditions.push(eq(invoices.tableType, tableType));
     if (paymentMethod) conditions.push(eq(invoices.paymentMethod, paymentMethod));
+    if (days) {
+      const cutoff = new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000);
+      conditions.push(gte(invoices.issuedAt, cutoff));
+    }
 
     const allInvoices = await db
       .select()
