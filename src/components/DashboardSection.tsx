@@ -29,6 +29,8 @@ interface Invoice {
 
 interface DailyPoint {
   date: string; // "1405/04/12"
+  tableRevenue: number;
+  cafeRevenue: number;
   revenue: number;
   count: number;
   weekday: string;
@@ -50,16 +52,27 @@ interface PeakCell {
 interface Analytics {
   daily: DailyPoint[];
   totalRevenue: number;
+  totalTableRevenue: number;
+  totalCafeRevenue: number;
   totalInvoices: number;
   avgDailyRevenue: number;
   bestDay: DailyPoint;
   changePercent: number;
-  topCafeItems: CafeItemStat[];
-  heatmap: number[][];
+  topCafeItemsByQty: CafeItemStat[];
+  topCafeItemsByRevenue: CafeItemStat[];
+  leastCafeItems: CafeItemStat[];
+  heatmaps: Record<string, number[][]>;
   dayLabels: string[];
   blockLabels: string[];
-  peakCell: PeakCell;
+  peakCells: Record<string, PeakCell>;
 }
+
+const TYPE_TABS: { id: string; label: string }[] = [
+  { id: "all", label: "همه" },
+  { id: "snooker", label: "🎱 اسنوکر" },
+  { id: "eightball", label: "🎳 ایت‌بال" },
+  { id: "playstation", label: "🎮 پلی‌استیشن" },
+];
 
 function jalaaliDay(date: string) {
   const parts = date.split("/");
@@ -73,6 +86,9 @@ export default function DashboardSection() {
   const [totalDebt, setTotalDebt] = useState(0);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [range, setRange] = useState<"week" | "month">("week");
+  const [heatType, setHeatType] = useState<string>("all");
+  const [cafeSort, setCafeSort] = useState<"qty" | "revenue">("qty");
+  const [showLeastCafe, setShowLeastCafe] = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -104,8 +120,16 @@ export default function DashboardSection() {
   const freeTables = tables.filter((t) => !t.isActive);
 
   const maxDailyRevenue = analytics ? Math.max(1, ...analytics.daily.map((d) => d.revenue)) : 1;
-  const maxHeatCount = analytics ? Math.max(1, ...analytics.heatmap.flat()) : 1;
-  const maxCafeQty = analytics ? Math.max(1, ...analytics.topCafeItems.map((c) => c.quantity)) : 1;
+  const currentHeatmap = analytics ? analytics.heatmaps[heatType] || [] : [];
+  const currentPeak = analytics ? analytics.peakCells[heatType] : undefined;
+  const maxHeatCount = currentHeatmap.length > 0 ? Math.max(1, ...currentHeatmap.flat()) : 1;
+
+  const cafeList = analytics ? (cafeSort === "qty" ? analytics.topCafeItemsByQty : analytics.topCafeItemsByRevenue) : [];
+  const maxCafeQty = cafeList.length > 0 ? Math.max(1, ...cafeList.map((c) => c.quantity)) : 1;
+  const maxCafeRev = cafeList.length > 0 ? Math.max(1, ...cafeList.map((c) => c.revenue)) : 1;
+
+  const cafeSharePercent =
+    analytics && analytics.totalRevenue > 0 ? Math.round((analytics.totalCafeRevenue / analytics.totalRevenue) * 100) : 0;
 
   return (
     <div className="space-y-4">
@@ -156,7 +180,7 @@ export default function DashboardSection() {
         {analytics && analytics.daily.length > 0 ? (
           <>
             {/* Summary stats */}
-            <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="grid grid-cols-3 gap-2 mb-3">
               <div className="bg-slate-800 rounded-lg p-2 text-center">
                 <div className="text-[10px] text-slate-500">مجموع فروش</div>
                 <div className="text-sm font-bold text-green-400 mt-1">{formatPrice(analytics.totalRevenue)}</div>
@@ -178,19 +202,32 @@ export default function DashboardSection() {
               </div>
             </div>
 
+            {/* سهم میز vs کافه */}
+            <div className="flex items-center gap-2 mb-4 text-xs">
+              <span className="text-slate-500">سهم کافه از فروش:</span>
+              <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-full bg-amber-500" style={{ width: `${cafeSharePercent}%` }} />
+              </div>
+              <span className="text-amber-400 font-bold">{cafeSharePercent.toLocaleString("fa-IR")}٪</span>
+            </div>
+
+            {/* نمودار میله‌ای دو رنگ (میز + کافه) */}
             <div className="flex items-end gap-1 h-36 overflow-x-auto">
               {analytics.daily.map((d) => {
-                const pct = Math.max(4, Math.round((d.revenue / maxDailyRevenue) * 100));
+                const totalPct = Math.max(4, Math.round((d.revenue / maxDailyRevenue) * 100));
+                const cafePct = d.revenue > 0 ? Math.round((d.cafeRevenue / d.revenue) * 100) : 0;
                 const isMax = d.revenue === maxDailyRevenue && d.revenue > 0;
                 return (
                   <div key={d.date} className="flex-1 min-w-[10px] flex flex-col items-center justify-end h-full">
-                    <div
-                      className={`w-full rounded-t-sm ${
-                        isMax ? "bg-green-400" : d.isWeekend ? "bg-purple-500" : "bg-blue-600"
-                      }`}
-                      style={{ height: `${pct}%` }}
-                      title={`${d.date} (${d.weekday}) — ${formatPrice(d.revenue)} — ${d.count} فاکتور`}
-                    />
+                    <div className="w-full rounded-t-sm overflow-hidden flex flex-col justify-end" style={{ height: `${totalPct}%` }}>
+                      {cafePct > 0 && (
+                        <div className="w-full bg-amber-500" style={{ height: `${cafePct}%` }} />
+                      )}
+                      <div
+                        className={`w-full flex-1 ${isMax ? "bg-green-400" : d.isWeekend ? "bg-purple-500" : "bg-blue-600"}`}
+                        title={`${d.date} (${d.weekday}) — میز: ${formatPrice(d.tableRevenue)} | کافه: ${formatPrice(d.cafeRevenue)} — ${d.count} فاکتور`}
+                      />
+                    </div>
                     <div className={`text-[10px] mt-1 ${d.isWeekend ? "text-purple-300" : "text-slate-500"}`}>
                       {d.weekday}
                     </div>
@@ -200,8 +237,9 @@ export default function DashboardSection() {
               })}
             </div>
 
-            <div className="flex items-center justify-center gap-3 mt-3 text-[10px] text-slate-500">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-600 inline-block" /> عادی</span>
+            <div className="flex items-center justify-center gap-3 mt-3 text-[10px] text-slate-500 flex-wrap">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-600 inline-block" /> میز</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> کافه</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500 inline-block" /> جمعه</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400 inline-block" /> پرفروش‌ترین</span>
             </div>
@@ -219,89 +257,157 @@ export default function DashboardSection() {
       </div>
 
       {/* Busiest Hours Heatmap */}
-      {analytics && analytics.peakCell.count > 0 && (
+      {analytics && (
         <div className="card">
           <h3 className="font-bold text-slate-300 mb-3">🔥 شلوغ‌ترین ساعات باشگاه</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse" style={{ minWidth: "340px" }}>
-              <thead>
-                <tr>
-                  <th className="text-[10px] text-slate-500 font-normal text-right pl-1"> </th>
-                  {analytics.blockLabels.map((label) => (
-                    <th key={label} className="text-[9px] text-slate-500 font-normal pb-1 text-center">
-                      {label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {analytics.dayLabels.map((dayLabel, dayIdx) => (
-                  <tr key={dayLabel}>
-                    <td className="text-[10px] text-slate-400 pl-2 whitespace-nowrap">{dayLabel}</td>
-                    {analytics.heatmap[dayIdx].map((count, blockIdx) => {
-                      const intensity = count / maxHeatCount;
-                      const isPeak = dayIdx === analytics.peakCell.day && blockIdx === analytics.peakCell.block && count > 0;
-                      return (
-                        <td key={blockIdx} className="p-[2px]">
-                          <div
-                            className="rounded-md flex items-center justify-center"
-                            style={{
-                              height: "26px",
-                              background: isPeak
-                                ? "#f59e0b"
-                                : count === 0
-                                ? "#1e293b"
-                                : `rgba(37, 99, 235, ${0.15 + intensity * 0.85})`,
-                              border: isPeak ? "1px solid #fbbf24" : "1px solid transparent",
-                            }}
-                            title={`${dayLabel} ${analytics.blockLabels[blockIdx]} — ${count} فاکتور`}
-                          >
-                            {count > 0 && (
-                              <span className={`text-[10px] font-bold ${isPeak ? "text-slate-900" : "text-white"}`}>
-                                {count.toLocaleString("fa-IR")}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+          <div className="flex gap-1 mb-3 overflow-x-auto">
+            {TYPE_TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setHeatType(t.id)}
+                className={`px-2.5 py-1 rounded-lg text-xs whitespace-nowrap ${
+                  heatType === t.id ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
-          <div className="text-center mt-3 text-sm text-slate-400">
-            شلوغ‌ترین زمان:{" "}
-            <span className="text-amber-400 font-bold">
-              {analytics.dayLabels[analytics.peakCell.day]}، ساعت {analytics.blockLabels[analytics.peakCell.block]}
-            </span>
-          </div>
+
+          {currentPeak && currentPeak.count > 0 ? (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse" style={{ minWidth: "520px" }}>
+                  <thead>
+                    <tr>
+                      <th className="text-[10px] text-slate-500 font-normal text-right pl-1"> </th>
+                      {analytics.blockLabels.map((label) => (
+                        <th key={label} className="text-[8px] text-slate-500 font-normal pb-1 text-center">
+                          {label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analytics.dayLabels.map((dayLabel, dayIdx) => (
+                      <tr key={dayLabel}>
+                        <td className="text-[10px] text-slate-400 pl-2 whitespace-nowrap">{dayLabel}</td>
+                        {currentHeatmap[dayIdx].map((count, blockIdx) => {
+                          const intensity = count / maxHeatCount;
+                          const isPeak = dayIdx === currentPeak.day && blockIdx === currentPeak.block && count > 0;
+                          return (
+                            <td key={blockIdx} className="p-[1px]">
+                              <div
+                                className="rounded-md flex items-center justify-center"
+                                style={{
+                                  height: "22px",
+                                  background: isPeak
+                                    ? "#f59e0b"
+                                    : count === 0
+                                    ? "#1e293b"
+                                    : `rgba(37, 99, 235, ${0.15 + intensity * 0.85})`,
+                                  border: isPeak ? "1px solid #fbbf24" : "1px solid transparent",
+                                }}
+                                title={`${dayLabel} ${analytics.blockLabels[blockIdx]} — ${count} فاکتور`}
+                              >
+                                {count > 0 && (
+                                  <span className={`text-[9px] font-bold ${isPeak ? "text-slate-900" : "text-white"}`}>
+                                    {count.toLocaleString("fa-IR")}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-center mt-3 text-sm text-slate-400">
+                شلوغ‌ترین زمان:{" "}
+                <span className="text-amber-400 font-bold">
+                  {analytics.dayLabels[currentPeak.day]}، ساعت {analytics.blockLabels[currentPeak.block]}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="text-center text-slate-500 text-sm py-4">داده‌ای برای این دسته وجود ندارد</div>
+          )}
         </div>
       )}
 
       {/* Top Cafe Items */}
-      {analytics && analytics.topCafeItems.length > 0 && (
+      {analytics && (analytics.topCafeItemsByQty.length > 0 || analytics.topCafeItemsByRevenue.length > 0) && (
         <div className="card">
-          <h3 className="font-bold text-slate-300 mb-3">☕ پرفروش‌ترین آیتم‌های کافه</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-slate-300">☕ پرفروش‌ترین آیتم‌های کافه</h3>
+            <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
+              <button
+                onClick={() => setCafeSort("qty")}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
+                  cafeSort === "qty" ? "bg-blue-600 text-white" : "text-slate-400"
+                }`}
+              >
+                تعداد
+              </button>
+              <button
+                onClick={() => setCafeSort("revenue")}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
+                  cafeSort === "revenue" ? "bg-blue-600 text-white" : "text-slate-400"
+                }`}
+              >
+                درآمد
+              </button>
+            </div>
+          </div>
           <div className="space-y-2">
-            {analytics.topCafeItems.map((item, idx) => (
+            {cafeList.map((item, idx) => (
               <div key={item.name} className="flex items-center gap-2">
                 <div className="text-slate-500 text-xs w-4">{(idx + 1).toLocaleString("fa-IR")}</div>
                 <div className="flex-1">
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-white">{item.name}</span>
-                    <span className="text-amber-400">{item.quantity.toLocaleString("fa-IR")} عدد</span>
+                    <span className="text-amber-400">
+                      {cafeSort === "qty" ? `${item.quantity.toLocaleString("fa-IR")} عدد` : formatPrice(item.revenue)}
+                    </span>
                   </div>
                   <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-amber-500 rounded-full"
-                      style={{ width: `${Math.round((item.quantity / maxCafeQty) * 100)}%` }}
+                      style={{
+                        width: `${Math.round(
+                          ((cafeSort === "qty" ? item.quantity : item.revenue) / (cafeSort === "qty" ? maxCafeQty : maxCafeRev)) * 100
+                        )}%`,
+                      }}
                     />
                   </div>
                 </div>
               </div>
             ))}
           </div>
+
+          {analytics.leastCafeItems.length > 0 && (
+            <div className="mt-4 pt-3" style={{ borderTop: "1px solid #334155" }}>
+              <button
+                className="text-xs text-slate-500 flex items-center gap-1"
+                onClick={() => setShowLeastCafe((v) => !v)}
+              >
+                {showLeastCafe ? "▲" : "▼"} کم‌فروش‌ترین آیتم‌ها (احتمالاً کاندید حذف از منو)
+              </button>
+              {showLeastCafe && (
+                <div className="mt-2 space-y-1">
+                  {analytics.leastCafeItems.map((item) => (
+                    <div key={item.name} className="flex justify-between text-xs text-slate-400">
+                      <span>{item.name}</span>
+                      <span>{item.quantity.toLocaleString("fa-IR")} عدد فروخته شده</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
