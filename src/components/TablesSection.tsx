@@ -50,6 +50,7 @@ interface Settings {
 interface Reservation {
   id: number;
   customerName: string;
+  customerPhone: string | null;
   tableType: string;
   reservationDate: string;
   startTime: string;
@@ -133,8 +134,10 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
     customerPhone: "",
     startTime: "",
     notes: "",
+    price: "",
   });
   const [startLoading, setStartLoading] = useState(false);
+  const [fillingReservationId, setFillingReservationId] = useState<number | null>(null);
 
   // Session edit
   const [editStartTime, setEditStartTime] = useState("");
@@ -176,7 +179,15 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
   function openStartModal(table: Table) {
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    setStartForm({ customerName: "", customerPhone: "", startTime: timeStr, notes: "" });
+    const todayRes = getTodayReservation(table.type)[0];
+    setStartForm({
+      customerName: todayRes?.customerName || "",
+      customerPhone: todayRes?.customerPhone || "",
+      startTime: timeStr,
+      notes: "",
+      price: String(getDefaultPrice(table.type)),
+    });
+    setFillingReservationId(todayRes?.id || null);
     setStartModal({ open: true, table });
   }
 
@@ -185,7 +196,7 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
     setStartLoading(true);
     try {
       const table = startModal.table;
-      const price = getDefaultPrice(table.type);
+      const price = startForm.price ? Number(startForm.price) : getDefaultPrice(table.type);
       const now = new Date();
       let startTime = new Date();
       if (startForm.startTime) {
@@ -210,8 +221,17 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
         showToast(err.error || "خطا در شروع سشن", "error");
         return;
       }
+      const newSession = await res.json();
+      if (fillingReservationId) {
+        await fetch(`/api/reservations/${fillingReservationId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "done", sessionId: newSession.id }),
+        });
+      }
       showToast(`${getTypeLabel(table.type)} ${table.name} شروع شد`, "success");
       setStartModal({ open: false, table: null });
+      setFillingReservationId(null);
       fetchData();
       onRefreshNeeded?.();
     } finally {
@@ -355,10 +375,11 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
   return (
     <div className="space-y-6">
       {/* Snooker Tables */}
+      {snookerTables.length > 0 && (
       <div>
-        <h2 className="text-lg font-bold text-green-400 mb-3 flex items-center gap-2">
+        <h2 className="text-lg font-bold mb-3 flex items-center gap-2" style={{ color: "#5ee89b" }}>
           🎱 <span>میزهای اسنوکر</span>
-          <span className="badge" style={{ background: "#166534", color: "#86efac" }}>
+          <span className="badge" style={{ background: "#0d3b2655", color: "#5ee89b" }}>
             {snookerTables.filter((t) => t.isActive).length}/{snookerTables.length} فعال
           </span>
         </h2>
@@ -375,12 +396,14 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
           ))}
         </div>
       </div>
+      )}
 
       {/* Eight Ball Tables */}
+      {eightballTables.length > 0 && (
       <div>
-        <h2 className="text-lg font-bold text-blue-400 mb-3 flex items-center gap-2">
+        <h2 className="text-lg font-bold mb-3 flex items-center gap-2" style={{ color: "#e0b23a" }}>
           🎳 <span>میزهای ایت‌بال</span>
-          <span className="badge" style={{ background: "#1e3a8a", color: "#93c5fd" }}>
+          <span className="badge" style={{ background: "#3a2a0c55", color: "#e0b23a" }}>
             {eightballTables.filter((t) => t.isActive).length}/{eightballTables.length} فعال
           </span>
         </h2>
@@ -397,12 +420,14 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
           ))}
         </div>
       </div>
+      )}
 
       {/* PlayStation */}
+      {playstationTables.length > 0 && (
       <div>
-        <h2 className="text-lg font-bold text-purple-400 mb-3 flex items-center gap-2">
+        <h2 className="text-lg font-bold mb-3 flex items-center gap-2" style={{ color: "#c78bd6" }}>
           🎮 <span>پلی‌استیشن</span>
-          <span className="badge" style={{ background: "#3b0764", color: "#c4b5fd" }}>
+          <span className="badge" style={{ background: "#3d1a4555", color: "#c78bd6" }}>
             {playstationTables.filter((t) => t.isActive).length}/{playstationTables.length} فعال
           </span>
         </h2>
@@ -419,6 +444,7 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
           ))}
         </div>
       </div>
+      )}
 
       {/* Start Modal */}
       <Modal
@@ -427,6 +453,11 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
         title={`شروع ${startModal.table ? getTypeLabel(startModal.table.type) : ""} - ${startModal.table?.name || ""}`}
       >
         <div className="space-y-4">
+          {fillingReservationId && (
+            <div className="rounded-lg px-3 py-2 text-xs" style={{ background: "#3a2a0c33", border: "1px solid #c9971f", color: "#e0b23a" }}>
+              📅 اطلاعات از رزرو امروز پر شد
+            </div>
+          )}
           <div>
             <label className="block text-sm text-slate-400 mb-1">نام مشتری (اختیاری)</label>
             <input
@@ -447,15 +478,27 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
               dir="ltr"
             />
           </div>
-          <div>
-            <label className="block text-sm text-slate-400 mb-1">ساعت شروع</label>
-            <input
-              className="form-input"
-              type="time"
-              value={startForm.startTime}
-              onChange={(e) => setStartForm((p) => ({ ...p, startTime: e.target.value }))}
-              dir="ltr"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">ساعت شروع</label>
+              <input
+                className="form-input"
+                type="time"
+                value={startForm.startTime}
+                onChange={(e) => setStartForm((p) => ({ ...p, startTime: e.target.value }))}
+                dir="ltr"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">قیمت (تومان/ساعت)</label>
+              <input
+                className="form-input"
+                type="number"
+                value={startForm.price}
+                onChange={(e) => setStartForm((p) => ({ ...p, price: e.target.value }))}
+                dir="ltr"
+              />
+            </div>
           </div>
           <div>
             <label className="block text-sm text-slate-400 mb-1">یادداشت (اختیاری)</label>
@@ -466,11 +509,8 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
               onChange={(e) => setStartForm((p) => ({ ...p, notes: e.target.value }))}
             />
           </div>
-          <div className="bg-slate-800 rounded-lg p-3 text-sm text-slate-300">
-            قیمت پیش‌فرض: {formatPrice(startModal.table ? getDefaultPrice(startModal.table.type) : 0)} / ساعت
-          </div>
           <div className="flex gap-3">
-            <button className="btn btn-secondary flex-1" onClick={() => setStartModal({ open: false, table: null })}>
+            <button className="btn btn-secondary flex-1" onClick={() => { setStartModal({ open: false, table: null }); setFillingReservationId(null); }}>
               انصراف
             </button>
             <button
@@ -559,24 +599,25 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
               {sessionModal.cafeOrders.length > 0 ? (
                 <div className="space-y-2">
                   {sessionModal.cafeOrders.map((order) => (
-                    <div key={order.id} className="flex items-center justify-between bg-slate-800 rounded-lg px-3 py-2">
+                    <div key={order.id} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "#0e1512" }}>
                       <div className="text-sm">
                         <span className="text-white">{order.name}</span>
                         <span className="text-slate-400 mr-2">×{order.quantity}</span>
                         {order.customerName && (
-                          <span className="text-xs text-blue-400 mr-1">({order.customerName})</span>
+                          <span className="text-xs mr-1" style={{ color: "#e0b23a" }}>({order.customerName})</span>
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-green-400 text-sm">{formatPrice(Number(order.totalPrice))}</span>
+                        <span className="text-sm" style={{ color: "#5ee89b" }}>{formatPrice(Number(order.totalPrice))}</span>
                         <button
-                          className="text-red-400 hover:text-red-300 text-sm"
+                          className="text-sm"
+                          style={{ color: "#f27f8a" }}
                           onClick={() => removeCafeItem(sessionModal.session!.id, order.id)}
                         >✕</button>
                       </div>
                     </div>
                   ))}
-                  <div className="text-left text-sm font-bold text-green-400">
+                  <div className="text-left text-sm font-bold" style={{ color: "#5ee89b" }}>
                     جمع کافه: {formatPrice(sessionModal.cafeOrders.reduce((s, o) => s + Number(o.totalPrice), 0))}
                   </div>
                 </div>
@@ -587,11 +628,12 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
                 {menuItems.map((item) => (
                   <button
                     key={item.id}
-                    className="bg-slate-700 hover:bg-slate-600 rounded-lg p-2 text-right text-sm transition-colors"
+                    className="rounded-lg p-2 text-right text-sm transition-colors"
+                    style={{ background: "#1a2420" }}
                     onClick={() => addCafeItem(item)}
                   >
                     <div className="text-white font-medium text-xs">{item.name}</div>
-                    <div className="text-green-400 text-xs">{formatPrice(Number(item.price))}</div>
+                    <div className="text-xs" style={{ color: "#e0b23a" }}>{formatPrice(Number(item.price))}</div>
                   </button>
                 ))}
               </div>
