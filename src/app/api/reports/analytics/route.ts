@@ -27,9 +27,34 @@ function getTehranDayIndex(date: Date): number {
   return WEEKDAY_TO_INDEX[weekday] ?? 0;
 }
 
-const BLOCK_LABELS = ["۰-۴", "۴-۸", "۸-۱۲", "۱۲-۱۶", "۱۶-۲۰", "۲۰-۲۴"];
+const BLOCK_LABELS = ["۰-۲", "۲-۴", "۴-۶", "۶-۸", "۸-۱۰", "۱۰-۱۲", "۱۲-۱۴", "۱۴-۱۶", "۱۶-۱۸", "۱۸-۲۰", "۲۰-۲۲", "۲۲-۲۴"];
+const NUM_BLOCKS = 12;
 
 const WEEKDAY_SHORT = ["ش", "ی", "د", "س", "چ", "پ", "ج"];
+
+const TABLE_TYPES = ["snooker", "eightball", "playstation"] as const;
+
+function buildHeatmap(rows: { issuedAt: Date | string }[]): number[][] {
+  const heatmap: number[][] = Array.from({ length: 7 }, () => new Array(NUM_BLOCKS).fill(0));
+  for (const inv of rows) {
+    const d = new Date(inv.issuedAt);
+    const day = getTehranDayIndex(d);
+    const hour = getTehranHour(d);
+    const block = Math.floor(hour / 2);
+    heatmap[day][block]++;
+  }
+  return heatmap;
+}
+
+function findPeak(heatmap: number[][]) {
+  let peak = { day: 0, block: 0, count: 0 };
+  for (let day = 0; day < 7; day++) {
+    for (let block = 0; block < NUM_BLOCKS; block++) {
+      if (heatmap[day][block] > peak.count) peak = { day, block, count: heatmap[day][block] };
+    }
+  }
+  return peak;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -47,7 +72,6 @@ export async function GET(req: NextRequest) {
         .where(and(gte(invoices.issuedAt, prevCutoff), lt(invoices.issuedAt, cutoff))),
     ]);
 
-    // Daily revenue (تمام فاکتورهای صادرشده در هر روز، صرف‌نظر از وضعیت تسویه)
     const dayLabels: string[] = [];
     const dayWeekdayIdx: number[] = [];
     for (let i = range - 1; i >= 0; i--) {
@@ -55,27 +79,38 @@ export async function GET(req: NextRequest) {
       dayLabels.push(toJalaali(d));
       dayWeekdayIdx.push(getTehranDayIndex(d));
     }
-    const revenueByDay = new Map<string, number>();
+    const tableRevByDay = new Map<string, number>();
+    const cafeRevByDay = new Map<string, number>();
     const countByDay = new Map<string, number>();
     for (const label of dayLabels) {
-      revenueByDay.set(label, 0);
+      tableRevByDay.set(label, 0);
+      cafeRevByDay.set(label, 0);
       countByDay.set(label, 0);
     }
     for (const inv of recentInvoices) {
-      if (inv.jalaaliDate && revenueByDay.has(inv.jalaaliDate)) {
-        revenueByDay.set(inv.jalaaliDate, (revenueByDay.get(inv.jalaaliDate) || 0) + Number(inv.totalAmount));
+      if (inv.jalaaliDate && tableRevByDay.has(inv.jalaaliDate)) {
+        tableRevByDay.set(inv.jalaaliDate, (tableRevByDay.get(inv.jalaaliDate) || 0) + Number(inv.gamePrice || 0));
+        cafeRevByDay.set(inv.jalaaliDate, (cafeRevByDay.get(inv.jalaaliDate) || 0) + Number(inv.cafeTotal || 0));
         countByDay.set(inv.jalaaliDate, (countByDay.get(inv.jalaaliDate) || 0) + 1);
       }
     }
-    const daily = dayLabels.map((label, idx) => ({
-      date: label,
-      revenue: revenueByDay.get(label) || 0,
-      count: countByDay.get(label) || 0,
-      weekday: WEEKDAY_SHORT[dayWeekdayIdx[idx]],
-      isWeekend: dayWeekdayIdx[idx] === 6, // جمعه
-    }));
+    const daily = dayLabels.map((label, idx) => {
+      const tableRevenue = tableRevByDay.get(label) || 0;
+      const cafeRevenue = cafeRevByDay.get(label) || 0;
+      return {
+        date: label,
+        tableRevenue,
+        cafeRevenue,
+        revenue: tableRevenue + cafeRevenue,
+        count: countByDay.get(label) || 0,
+        weekday: WEEKDAY_SHORT[dayWeekdayIdx[idx]],
+        isWeekend: dayWeekdayIdx[idx] === 6,
+      };
+    });
 
     const totalRevenue = daily.reduce((s, d) => s + d.revenue, 0);
+    const totalTableRevenue = daily.reduce((s, d) => s + d.tableRevenue, 0);
+    const totalCafeRevenue = daily.reduce((s, d) => s + d.cafeRevenue, 0);
     const totalInvoices = daily.reduce((s, d) => s + d.count, 0);
     const avgDailyRevenue = daily.length > 0 ? Math.round(totalRevenue / daily.length) : 0;
     const bestDay = daily.reduce((best, d) => (d.revenue > best.revenue ? d : best), daily[0] || { date: "", revenue: 0 });
@@ -88,27 +123,21 @@ export async function GET(req: NextRequest) {
         ? 100
         : 0;
 
-    // شلوغ‌ترین ساعات به تفکیک روز هفته (heatmap): ۷ روز × ۶ بازه‌ی ۴ ساعته
-    const heatmap: number[][] = Array.from({ length: 7 }, () => new Array(6).fill(0));
-    for (const inv of recentInvoices) {
-      const d = new Date(inv.issuedAt);
-      const day = getTehranDayIndex(d);
-      const hour = getTehranHour(d);
-      const block = Math.floor(hour / 4);
-      heatmap[day][block]++;
+    const heatmaps: Record<string, number[][]> = {
+      all: buildHeatmap(recentInvoices),
+    };
+    for (const type of TABLE_TYPES) {
+      heatmaps[type] = buildHeatmap(recentInvoices.filter((i) => i.tableType === type));
     }
-    let peakCell = { day: 0, block: 0, count: 0 };
-    for (let day = 0; day < 7; day++) {
-      for (let block = 0; block < 6; block++) {
-        if (heatmap[day][block] > peakCell.count) {
-          peakCell = { day, block, count: heatmap[day][block] };
-        }
-      }
+    const peakCells: Record<string, { day: number; block: number; count: number }> = {};
+    for (const key of Object.keys(heatmaps)) {
+      peakCells[key] = findPeak(heatmaps[key]);
     }
 
-    // پرفروش‌ترین آیتم‌های کافه
     const invoiceIds = recentInvoices.map((i) => i.id);
-    let topCafeItems: { name: string; quantity: number; revenue: number }[] = [];
+    let topCafeItemsByQty: { name: string; quantity: number; revenue: number }[] = [];
+    let topCafeItemsByRevenue: { name: string; quantity: number; revenue: number }[] = [];
+    let leastCafeItems: { name: string; quantity: number; revenue: number }[] = [];
     if (invoiceIds.length > 0) {
       const items = await db
         .select()
@@ -122,24 +151,28 @@ export async function GET(req: NextRequest) {
         cur.revenue += Number(it.totalPrice);
         map.set(it.name, cur);
       }
-      topCafeItems = [...map.entries()]
-        .map(([name, v]) => ({ name, ...v }))
-        .sort((a, b) => b.quantity - a.quantity)
-        .slice(0, 6);
+      const all = [...map.entries()].map(([name, v]) => ({ name, ...v }));
+      topCafeItemsByQty = [...all].sort((a, b) => b.quantity - a.quantity).slice(0, 6);
+      topCafeItemsByRevenue = [...all].sort((a, b) => b.revenue - a.revenue).slice(0, 6);
+      leastCafeItems = [...all].sort((a, b) => a.quantity - b.quantity).slice(0, 5);
     }
 
     return NextResponse.json({
       daily,
       totalRevenue,
+      totalTableRevenue,
+      totalCafeRevenue,
       totalInvoices,
       avgDailyRevenue,
       bestDay,
       changePercent,
-      topCafeItems,
-      heatmap,
+      topCafeItemsByQty,
+      topCafeItemsByRevenue,
+      leastCafeItems,
+      heatmaps,
       dayLabels: DAY_LABELS,
       blockLabels: BLOCK_LABELS,
-      peakCell,
+      peakCells,
     });
   } catch (e) {
     console.error(e);
