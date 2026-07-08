@@ -48,9 +48,9 @@ interface Debtor {
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  paid: { label: "تسویه شده", color: "#16a34a" },
-  pending: { label: "در انتظار", color: "#d97706" },
-  debt: { label: "بدهکاری", color: "#dc2626" },
+  paid: { label: "تسویه شده", color: "#5ee89b" },
+  pending: { label: "در انتظار", color: "#e0b23a" },
+  debt: { label: "بدهکاری", color: "#f27f8a" },
 };
 
 const PAYMENT_MAP: Record<string, string> = {
@@ -65,13 +65,22 @@ const TYPE_MAP: Record<string, string> = {
   playstation: "🎮 پلی‌استیشن",
 };
 
+const RANGE_OPTIONS = [
+  { id: "7", label: "۷ روز اخیر" },
+  { id: "30", label: "۳۰ روز اخیر" },
+  { id: "", label: "همه" },
+];
+
 export default function HistorySection() {
   const { showToast } = useToast();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("");
+  const [showAdvancedDate, setShowAdvancedDate] = useState(false);
+  const [daysFilter, setDaysFilter] = useState("30");
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [paymentFilter, setPaymentFilter] = useState("");
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(false);
   const [deleteInvoiceId, setDeleteInvoiceId] = useState<number | null>(null);
@@ -89,7 +98,9 @@ export default function HistorySection() {
     try {
       const params = new URLSearchParams();
       if (statusFilter) params.set("status", statusFilter);
+      if (paymentFilter) params.set("paymentMethod", paymentFilter);
       if (dateFilter) params.set("date", dateFilter);
+      else if (daysFilter) params.set("days", daysFilter);
       if (typeFilter) params.set("tableType", typeFilter);
       if (search) params.set("search", search);
       const res = await fetch(`/api/invoices?${params}`);
@@ -99,7 +110,7 @@ export default function HistorySection() {
     } finally {
       setLoading(false);
     }
-  }, [search, dateFilter, statusFilter, typeFilter, showToast]);
+  }, [search, dateFilter, daysFilter, statusFilter, typeFilter, paymentFilter, showToast]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
@@ -174,40 +185,66 @@ export default function HistorySection() {
     }
   }
 
+  const totalAmountSum = invoices.reduce((s, i) => s + Number(i.totalAmount), 0);
+
   return (
     <div className="space-y-4">
       {/* Filters */}
       <div className="card space-y-3">
-        <div className="flex gap-2 flex-wrap">
+        <input
+          className="form-input"
+          placeholder="جستجو نام یا شماره فاکتور..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+
+        {/* بازه زمانی */}
+        <div className="flex gap-2 flex-wrap items-center">
+          {RANGE_OPTIONS.map((r) => (
+            <button
+              key={r.id}
+              className={`btn btn-sm ${!dateFilter && daysFilter === r.id ? "btn-primary" : "btn-secondary"}`}
+              onClick={() => { setDateFilter(""); setDaysFilter(r.id); }}
+            >
+              {r.label}
+            </button>
+          ))}
+          <button
+            className={`btn btn-sm ${dateFilter ? "btn-primary" : "btn-secondary"}`}
+            onClick={() => setShowAdvancedDate((v) => !v)}
+          >
+            📅 تاریخ خاص
+          </button>
+        </div>
+        {showAdvancedDate && (
           <input
-            className="form-input flex-1 min-w-32"
-            placeholder="جستجو نام یا شماره فاکتور..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <input
-            className="form-input w-36"
-            placeholder="تاریخ شمسی"
+            className="form-input w-full"
+            placeholder="تاریخ شمسی (مثلاً 1403/04/25)"
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
             dir="ltr"
           />
-        </div>
+        )}
+
+        {/* وضعیت */}
         <div className="flex gap-2 flex-wrap">
           <button
             className={`btn btn-sm ${!statusFilter ? "btn-primary" : "btn-secondary"}`}
             onClick={() => setStatusFilter("")}
-          >همه</button>
+          >همه وضعیت‌ها</button>
           {["paid", "pending", "debt"].map((s) => (
             <button
               key={s}
               className={`btn btn-sm ${statusFilter === s ? "btn-primary" : "btn-secondary"}`}
-              onClick={() => setStatusFilter(s)}
+              onClick={() => setStatusFilter(statusFilter === s ? "" : s)}
             >
               {STATUS_MAP[s]?.label}
             </button>
           ))}
-          <div className="h-4 w-px bg-slate-600" />
+        </div>
+
+        {/* نوع میز و روش پرداخت */}
+        <div className="flex gap-2 flex-wrap">
           {["snooker", "eightball", "playstation"].map((t) => (
             <button
               key={t}
@@ -217,8 +254,26 @@ export default function HistorySection() {
               {TYPE_MAP[t]}
             </button>
           ))}
+          <div className="h-4 w-px bg-slate-600 self-center" />
+          {["cash", "card", "debt"].map((p) => (
+            <button
+              key={p}
+              className={`btn btn-sm ${paymentFilter === p ? "btn-primary" : "btn-secondary"}`}
+              onClick={() => setPaymentFilter(paymentFilter === p ? "" : p)}
+            >
+              {PAYMENT_MAP[p]}
+            </button>
+          ))}
         </div>
       </div>
+
+      {/* Summary */}
+      {!loading && invoices.length > 0 && (
+        <div className="rounded-xl p-3 flex items-center justify-between" style={{ background: "#0d3b2622", border: "1px solid #1a7a4c55" }}>
+          <span className="text-sm text-slate-400">{invoices.length.toLocaleString("fa-IR")} فاکتور</span>
+          <span className="font-bold" style={{ color: "#5ee89b" }}>{formatPrice(totalAmountSum)}</span>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-center text-slate-400 py-8">در حال بارگذاری...</div>
@@ -227,11 +282,12 @@ export default function HistorySection() {
       ) : (
         <div className="space-y-2">
           {invoices.map((inv) => {
-            const s = STATUS_MAP[inv.status] || { label: inv.status, color: "#64748b" };
+            const s = STATUS_MAP[inv.status] || { label: inv.status, color: "#8a9488" };
+            const time = new Date(inv.issuedAt).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
             return (
               <div
                 key={inv.id}
-                className="card cursor-pointer hover:border-slate-400 transition-colors"
+                className="card cursor-pointer transition-colors"
                 onClick={() => setSelectedInvoice(inv)}
               >
                 <div className="flex items-center justify-between">
@@ -240,12 +296,12 @@ export default function HistorySection() {
                       <span className="text-xs text-slate-500 font-mono">{inv.invoiceNumber}</span>
                       <span
                         className="badge text-xs"
-                        style={{ background: s.color + "33", color: s.color }}
+                        style={{ background: s.color + "22", color: s.color }}
                       >
                         {s.label}
                       </span>
                       {inv.isPartial && (
-                        <span className="badge text-xs" style={{ background: "#1e3a5f", color: "#93c5fd" }}>جزئی</span>
+                        <span className="badge text-xs" style={{ background: "#2a8fa022", color: "#5ecfe0" }}>جزئی</span>
                       )}
                     </div>
                     <div className="mt-1 font-medium text-white">
@@ -254,11 +310,11 @@ export default function HistorySection() {
                     <div className="text-xs text-slate-400 flex gap-3 flex-wrap mt-1">
                       {inv.tableName && <span>{TYPE_MAP[inv.tableType || ""] || ""} {inv.tableName}</span>}
                       {inv.durationMinutes && <span>⏱ {formatDuration(inv.durationMinutes)}</span>}
-                      <span>📅 {inv.jalaaliDate}</span>
+                      <span>📅 {inv.jalaaliDate} — {time}</span>
                     </div>
                   </div>
                   <div className="text-left">
-                    <div className="font-bold text-green-400">{formatPrice(Number(inv.totalAmount))}</div>
+                    <div className="font-bold" style={{ color: "#5ee89b" }}>{formatPrice(Number(inv.totalAmount))}</div>
                     {inv.paymentMethod && (
                       <div className="text-xs text-slate-400">{PAYMENT_MAP[inv.paymentMethod]}</div>
                     )}
@@ -279,9 +335,9 @@ export default function HistorySection() {
       >
         {selectedInvoice && (
           <div className="space-y-4 text-sm">
-            <div className="grid grid-cols-2 gap-2 bg-slate-800 rounded-lg p-3">
+            <div className="grid grid-cols-2 gap-2 rounded-lg p-3" style={{ background: "#0e1512" }}>
               <div><span className="text-slate-400">مشتری:</span> <span className="text-white">{selectedInvoice.customerName || "—"}</span></div>
-              <div><span className="text-slate-400">تلفن:</span> <span className="text-white dir-ltr" dir="ltr">{selectedInvoice.customerPhone || "—"}</span></div>
+              <div><span className="text-slate-400">تلفن:</span> <span className="text-white" dir="ltr">{selectedInvoice.customerPhone || "—"}</span></div>
               <div><span className="text-slate-400">میز:</span> <span className="text-white">{selectedInvoice.tableName || "—"}</span></div>
               <div><span className="text-slate-400">تاریخ:</span> <span className="text-white">{selectedInvoice.jalaaliDate}</span></div>
               {selectedInvoice.startTime && (
@@ -306,7 +362,7 @@ export default function HistorySection() {
                   {selectedInvoice.items.map((item) => (
                     <div key={item.id} className="flex justify-between pr-4">
                       <span className="text-white">{item.name} ×{item.quantity}</span>
-                      <span className="text-green-400">{formatPrice(Number(item.totalPrice))}</span>
+                      <span style={{ color: "#5ee89b" }}>{formatPrice(Number(item.totalPrice))}</span>
                     </div>
                   ))}
                   <div className="flex justify-between">
@@ -318,25 +374,25 @@ export default function HistorySection() {
               {Number(selectedInvoice.discountAmount) > 0 && (
                 <div className="flex justify-between">
                   <span className="text-slate-400">تخفیف:</span>
-                  <span className="text-red-400">-{formatPrice(Number(selectedInvoice.discountAmount))}</span>
+                  <span style={{ color: "#f27f8a" }}>-{formatPrice(Number(selectedInvoice.discountAmount))}</span>
                 </div>
               )}
               <div className="divider" />
               <div className="flex justify-between font-bold text-base">
                 <span className="text-white">مبلغ نهایی:</span>
-                <span className="text-green-400">{formatPrice(Number(selectedInvoice.totalAmount))}</span>
+                <span style={{ color: "#5ee89b" }}>{formatPrice(Number(selectedInvoice.totalAmount))}</span>
               </div>
             </div>
 
             {selectedInvoice.notes && (
-              <div className="bg-slate-800 rounded-lg p-3">
+              <div className="rounded-lg p-3" style={{ background: "#0e1512" }}>
                 <span className="text-slate-400 text-xs">یادداشت: </span>
                 <span className="text-white">{selectedInvoice.notes}</span>
               </div>
             )}
 
             {/* ویرایش روش پرداخت و وضعیت تسویه */}
-            <div className="bg-slate-800 rounded-lg p-3 space-y-3">
+            <div className="rounded-lg p-3 space-y-3" style={{ background: "#0e1512", border: "1px solid #26332a" }}>
               <div>
                 <div className="text-xs text-slate-400 mb-2">روش پرداخت</div>
                 <div className="flex gap-2">
@@ -386,7 +442,7 @@ export default function HistorySection() {
               )}
 
               {editMethod === "debt" && selectedInvoice.status === "debt" && (
-                <div className="text-xs text-amber-400">این فاکتور همین الان هم روی بدهکاری ثبت شده.</div>
+                <div className="text-xs" style={{ color: "#e0b23a" }}>این فاکتور همین الان هم روی بدهکاری ثبت شده.</div>
               )}
 
               {editMethod !== "debt" && (
