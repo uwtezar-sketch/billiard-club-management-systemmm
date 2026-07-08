@@ -70,8 +70,8 @@ export default function Home() {
         <header
           className="sticky top-0 z-50 px-4 py-3"
           style={{
-            background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-            borderBottom: "1px solid #334155",
+            background: "linear-gradient(135deg, #0a0d0b 0%, #14211a 100%)",
+            borderBottom: "1px solid #26332a",
             backdropFilter: "blur(12px)",
           }}
         >
@@ -84,7 +84,7 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-3">
               <div className="text-left">
-                <div className="text-lg font-bold text-blue-400">{currentTime}</div>
+                <div className="text-lg font-bold" style={{ color: "#e0b23a" }}>{currentTime}</div>
                 <div className="text-xs text-slate-500">{currentDate}</div>
               </div>
               <button
@@ -115,8 +115,8 @@ export default function Home() {
         <nav
           className="fixed bottom-0 left-0 right-0 z-50 px-1 py-1"
           style={{
-            background: "linear-gradient(to top, #0f172a, #0f172acc)",
-            borderTop: "1px solid #334155",
+            background: "linear-gradient(to top, #0a0d0b, #0a0d0bcc)",
+            borderTop: "1px solid #26332a",
             backdropFilter: "blur(12px)",
             maxWidth: "480px",
             margin: "0 auto",
