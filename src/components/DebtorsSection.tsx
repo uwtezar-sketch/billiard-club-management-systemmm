@@ -28,10 +28,17 @@ interface Debtor {
   debts: Debt[];
 }
 
+const OVERDUE_DAYS = 14;
+
+function daysSince(dateStr: string) {
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
+}
+
 export default function DebtorsSection() {
   const { showToast } = useToast();
   const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"withDebt" | "all">("withDebt");
   const [addDebtorModal, setAddDebtorModal] = useState(false);
   const [addDebtModal, setAddDebtModal] = useState<Debtor | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -149,14 +156,33 @@ export default function DebtorsSection() {
 
   const totalAllDebts = debtors.reduce((s, d) => s + Number(d.totalDebt), 0);
 
+  const enriched = debtors
+    .map((d) => {
+      const unpaidDebts = d.debts.filter((x) => !x.isPaid);
+      const unpaidTotal = unpaidDebts.reduce((s, x) => s + Number(x.amount), 0);
+      const oldestDays = unpaidDebts.length > 0 ? Math.max(...unpaidDebts.map((x) => daysSince(x.createdAt))) : 0;
+      return { debtor: d, unpaidDebts, unpaidTotal, oldestDays, isOverdue: oldestDays >= OVERDUE_DAYS };
+    })
+    .filter((e) => (filter === "withDebt" ? e.unpaidTotal > 0 : true))
+    .sort((a, b) => b.unpaidTotal - a.unpaidTotal);
+
+  const overdueCount = enriched.filter((e) => e.isOverdue).length;
+
   return (
     <div className="space-y-4">
       {/* Summary */}
-      <div className="card" style={{ background: "linear-gradient(135deg, #7f1d1d, #991b1b)", border: "1px solid #dc2626" }}>
+      <div className="rounded-xl p-4" style={{ background: "linear-gradient(135deg, #3d1016, #5c1620)", border: "1px solid #8f1d2c" }}>
         <div className="text-center">
           <div className="text-slate-300 text-sm mb-1">مجموع بدهی‌های معوق</div>
-          <div className="text-3xl font-bold text-red-300">{formatPrice(totalAllDebts)}</div>
-          <div className="text-xs text-slate-400 mt-1">{debtors.length} بدهکار</div>
+          <div className="text-3xl font-bold" style={{ color: "#f27f8a" }}>{formatPrice(totalAllDebts)}</div>
+          <div className="text-xs text-slate-400 mt-1">
+            {debtors.filter((d) => Number(d.totalDebt) > 0).length.toLocaleString("fa-IR")} بدهکار
+            {overdueCount > 0 && (
+              <span className="mr-2" style={{ color: "#e0b23a" }}>
+                — ⚠️ {overdueCount.toLocaleString("fa-IR")} مورد بیش از {OVERDUE_DAYS.toLocaleString("fa-IR")} روز معوق
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -167,41 +193,75 @@ export default function DebtorsSection() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button className="btn btn-danger" onClick={() => setAddDebtorModal(true)}>
+        <button className="btn btn-primary" onClick={() => setAddDebtorModal(true)}>
           ➕ بدهکار جدید
         </button>
       </div>
 
-      {debtors.length === 0 ? (
-        <div className="text-center text-slate-500 py-12">بدهکاری ثبت نشده</div>
+      <div className="flex gap-2">
+        <button
+          className={`btn btn-sm ${filter === "withDebt" ? "btn-primary" : "btn-secondary"}`}
+          onClick={() => setFilter("withDebt")}
+        >
+          فقط دارای بدهی
+        </button>
+        <button
+          className={`btn btn-sm ${filter === "all" ? "btn-primary" : "btn-secondary"}`}
+          onClick={() => setFilter("all")}
+        >
+          همه بدهکاران
+        </button>
+      </div>
+
+      {enriched.length === 0 ? (
+        <div className="text-center text-slate-500 py-12">
+          {filter === "withDebt" ? "کسی بدهی معوق نداره 🎉" : "بدهکاری ثبت نشده"}
+        </div>
       ) : (
         <div className="space-y-3">
-          {debtors.map((debtor) => {
-            const unpaidDebts = debtor.debts.filter((d) => !d.isPaid);
-            const unpaidTotal = unpaidDebts.reduce((s, d) => s + Number(d.amount), 0);
+          {enriched.map(({ debtor, unpaidDebts, unpaidTotal, oldestDays, isOverdue }) => {
             const isExpanded = expandedId === debtor.id;
 
             return (
-              <div key={debtor.id} className="card">
+              <div
+                key={debtor.id}
+                className="card"
+                style={isOverdue ? { borderColor: "#c9971f" } : undefined}
+              >
                 <div
                   className="flex items-center justify-between cursor-pointer"
                   onClick={() => setExpandedId(isExpanded ? null : debtor.id)}
                 >
                   <div>
-                    <div className="font-bold text-white flex items-center gap-2">
+                    <div className="font-bold text-white flex items-center gap-2 flex-wrap">
                       {debtor.name}
-                      {unpaidTotal > 0 && (
-                        <span className="badge" style={{ background: "#7f1d1d", color: "#fca5a5" }}>
-                          {unpaidDebts.length} ردیف
+                      {unpaidDebts.length > 0 && (
+                        <span className="badge" style={{ background: "#8f1d2c33", color: "#f27f8a" }}>
+                          {unpaidDebts.length.toLocaleString("fa-IR")} ردیف
+                        </span>
+                      )}
+                      {isOverdue && (
+                        <span className="badge" style={{ background: "#3a2a0c", color: "#e0b23a" }}>
+                          ⚠️ {oldestDays.toLocaleString("fa-IR")} روز
                         </span>
                       )}
                     </div>
                     {debtor.phone && (
-                      <div className="text-xs text-slate-400" dir="ltr">{debtor.phone}</div>
+                      <a
+                        href={`tel:${debtor.phone}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-xs text-slate-400 inline-block mt-1"
+                        dir="ltr"
+                        style={{ color: "#5ecfe0" }}
+                      >
+                        📞 {debtor.phone}
+                      </a>
                     )}
                   </div>
                   <div className="text-left">
-                    <div className="text-red-400 font-bold">{formatPrice(unpaidTotal)}</div>
+                    <div className="font-bold" style={{ color: unpaidTotal > 0 ? "#f27f8a" : "#5ee89b" }}>
+                      {formatPrice(unpaidTotal)}
+                    </div>
                     <div className="text-xs text-slate-500">کل بدهی</div>
                   </div>
                 </div>
@@ -213,9 +273,12 @@ export default function DebtorsSection() {
                         {debtor.debts.map((debt) => (
                           <div
                             key={debt.id}
-                            className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
-                              debt.isPaid ? "bg-green-950/40 border border-green-800" : "bg-red-950/40 border border-red-800"
-                            }`}
+                            className="flex items-center justify-between rounded-lg px-3 py-2 text-sm"
+                            style={
+                              debt.isPaid
+                                ? { background: "#0d3b2622", border: "1px solid #1a7a4c55" }
+                                : { background: "#3d101622", border: "1px solid #8f1d2c55" }
+                            }
                           >
                             <div>
                               <div className="text-white">{debt.description || "بدهی"}</div>
@@ -224,13 +287,13 @@ export default function DebtorsSection() {
                                 {debt.invoiceNumber && ` | فاکتور ${debt.invoiceNumber}`}
                               </div>
                               {debt.isPaid && debt.paidAt && (
-                                <div className="text-xs text-green-400">
+                                <div className="text-xs" style={{ color: "#5ee89b" }}>
                                   تسویه: {new Date(debt.paidAt).toLocaleDateString("fa-IR")}
                                 </div>
                               )}
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className={debt.isPaid ? "text-green-400" : "text-red-400"}>
+                              <span style={{ color: debt.isPaid ? "#5ee89b" : "#f27f8a" }}>
                                 {formatPrice(Number(debt.amount))}
                               </span>
                               {!debt.isPaid && (
@@ -302,7 +365,7 @@ export default function DebtorsSection() {
           </div>
           <div className="flex gap-3">
             <button className="btn btn-secondary flex-1" onClick={() => setAddDebtorModal(false)}>انصراف</button>
-            <button className="btn btn-danger flex-1" onClick={handleAddDebtor} disabled={loading}>ثبت</button>
+            <button className="btn btn-primary flex-1" onClick={handleAddDebtor} disabled={loading}>ثبت</button>
           </div>
         </div>
       </Modal>
@@ -324,7 +387,7 @@ export default function DebtorsSection() {
           </div>
           <div className="flex gap-3">
             <button className="btn btn-secondary flex-1" onClick={() => setAddDebtModal(null)}>انصراف</button>
-            <button className="btn btn-danger flex-1" onClick={handleAddDebt} disabled={loading}>ثبت بدهی</button>
+            <button className="btn btn-primary flex-1" onClick={handleAddDebt} disabled={loading}>ثبت بدهی</button>
           </div>
         </div>
       </Modal>
