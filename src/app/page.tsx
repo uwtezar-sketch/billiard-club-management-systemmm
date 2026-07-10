@@ -26,6 +26,8 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "settings", label: "تنظیمات", icon: "⚙️" },
 ];
 
+const EMPLOYEE_TABS: Tab[] = ["tables", "cafe", "reservations", "debtors", "history"];
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("tables");
   const [currentTime, setCurrentTime] = useState("");
@@ -51,7 +53,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (role === "employee" && activeTab !== "tables") {
+    if (role === "employee" && !EMPLOYEE_TABS.includes(activeTab)) {
       setActiveTab("tables");
     }
   }, [role, activeTab]);
@@ -61,7 +63,7 @@ export default function Home() {
     window.location.href = "/login";
   }
 
-  const visibleTabs = role === "employee" ? TABS.filter((t) => t.id === "tables") : TABS;
+  const visibleTabs = role === "employee" ? TABS.filter((t) => EMPLOYEE_TABS.includes(t.id)) : TABS;
 
   return (
     <ToastProvider>
