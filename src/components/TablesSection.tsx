@@ -74,6 +74,12 @@ function useTimer(startTime: string | null, isActive: boolean) {
   return elapsed;
 }
 
+const LONG_SESSION_HOURS = 4;
+
+function isSessionForgotten(startTime: string) {
+  return Date.now() - new Date(startTime).getTime() > LONG_SESSION_HOURS * 60 * 60 * 1000;
+}
+
 function TimerDisplay({ startTime, isActive, pricePerHour }: { startTime: string; isActive: boolean; pricePerHour: number }) {
   const elapsed = useTimer(isActive ? startTime : null, isActive);
   const minutes = Math.floor(elapsed / 60);
