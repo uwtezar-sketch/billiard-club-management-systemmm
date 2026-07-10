@@ -16,6 +16,34 @@ export default function UsersSection() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"admin" | "employee">("employee");
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [backupLoading, setBackupLoading] = useState(false);
+
+  async function handleBackup() {
+    setBackupLoading(true);
+    try {
+      const res = await fetch("/api/backup");
+      if (!res.ok) {
+        showToast("خطا در ساخت نسخه پشتیبان", "error");
+        return;
+      }
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      a.href = url;
+      a.download = `billiard-backup-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast("نسخه پشتیبان دانلود شد", "success");
+    } catch {
+      showToast("خطا در دانلود نسخه پشتیبان", "error");
+    } finally {
+      setBackupLoading(false);
+    }
+  }
 
   const fetchList = useCallback(async () => {
     const res = await fetch("/api/users");
@@ -58,6 +86,15 @@ export default function UsersSection() {
 
   return (
     <div className="space-y-4">
+      <div className="card">
+        <h3 className="font-bold text-slate-300 mb-2">💾 نسخه پشتیبان</h3>
+        <p className="text-xs text-slate-500 mb-3">
+          یه فایل کامل از تمام اطلاعات باشگاه (میزها، فاکتورها، بدهکاران، رزروها و...) دانلود می‌کنی. بهتره هر چند وقت یه‌بار (مثلاً هفته‌ای یه‌بار) این کارو بکنی و فایل رو یه‌جای امن (گوگل‌درایو، ایمیل خودت) نگه داری.
+        </p>
+        <button className="btn btn-primary btn-full" onClick={handleBackup} disabled={backupLoading}>
+          {backupLoading ? "در حال آماده‌سازی..." : "⬇️ دانلود نسخه پشتیبان"}
+        </button>
+      </div>
       <div className="card">
         <h3 className="font-bold text-slate-300 mb-3">➕ افزودن کاربر جدید</h3>
         <div className="space-y-2">
