@@ -411,6 +411,25 @@ export default function DashboardSection() {
         </div>
       )}
 
+      {/* Forgotten Sessions Warning */}
+      {activeTables.some((t) => t.activeSession && Date.now() - new Date(t.activeSession.startTime).getTime() > 4 * 60 * 60 * 1000) && (
+        <div className="rounded-xl p-3" style={{ background: "#3d101633", border: "1px solid #8f1d2c" }}>
+          <div className="font-bold mb-1" style={{ color: "#f27f8a" }}>⚠️ سشن‌های طولانی (احتمالاً فراموش‌شده)</div>
+          <div className="space-y-1">
+            {activeTables
+              .filter((t) => t.activeSession && Date.now() - new Date(t.activeSession.startTime).getTime() > 4 * 60 * 60 * 1000)
+              .map((t) => (
+                <div key={t.id} className="text-sm text-slate-300 flex justify-between">
+                  <span>{t.name}{t.activeSession?.customerName ? ` — ${t.activeSession.customerName}` : ""}</span>
+                  <span style={{ color: "#f27f8a" }}>
+                    {formatDuration(Math.floor((Date.now() - new Date(t.activeSession!.startTime).getTime()) / 60000))}
+                  </span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
       {/* Active Tables */}
       {activeTables.length > 0 && (
         <div className="card">
@@ -420,22 +439,28 @@ export default function DashboardSection() {
               const elapsed = table.activeSession
                 ? Math.floor((Date.now() - new Date(table.activeSession.startTime).getTime()) / 60000)
                 : 0;
+              const isForgotten = elapsed > 4 * 60;
               return (
-                <div key={table.id} className="bg-slate-800 rounded-lg px-3 py-2 flex justify-between items-center">
+                <div
+                  key={table.id}
+                  className="rounded-lg px-3 py-2 flex justify-between items-center"
+                  style={isForgotten ? { background: "#3d101633", border: "1px solid #8f1d2c" } : { background: "#0e1512" }}
+                >
                   <div>
                     <span className="text-white font-medium">{table.name}</span>
                     {table.activeSession?.customerName && (
                       <span className="text-slate-400 text-sm mr-2">({table.activeSession.customerName})</span>
                     )}
                   </div>
-                  <div className="text-green-400 text-sm">{formatDuration(elapsed)}</div>
+                  <div className="text-sm" style={{ color: isForgotten ? "#f27f8a" : "#5ee89b" }}>
+                    {isForgotten && "⚠️ "}{formatDuration(elapsed)}
+                  </div>
                 </div>
               );
             })}
           </div>
         </div>
       )}
-
       {/* Pending Invoices */}
       {pendingInvoices.length > 0 && (
         <div className="card">
