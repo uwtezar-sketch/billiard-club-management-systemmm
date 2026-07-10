@@ -28,7 +28,7 @@ interface Invoice {
 }
 
 interface DailyPoint {
-  date: string; // "1405/04/12"
+  date: string;
   tableRevenue: number;
   cafeRevenue: number;
   revenue: number;
@@ -89,6 +89,8 @@ export default function DashboardSection() {
   const [heatType, setHeatType] = useState<string>("all");
   const [cafeSort, setCafeSort] = useState<"qty" | "revenue">("qty");
   const [showLeastCafe, setShowLeastCafe] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<DailyPoint | null>(null);
+  const [selectedCell, setSelectedCell] = useState<{ day: number; block: number; count: number } | null>(null);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -115,6 +117,11 @@ export default function DashboardSection() {
     const interval = setInterval(fetchAll, 15000);
     return () => clearInterval(interval);
   }, [fetchAll]);
+
+  useEffect(() => {
+    setSelectedDay(null);
+    setSelectedCell(null);
+  }, [range, heatType]);
 
   const activeTables = tables.filter((t) => t.isActive);
   const freeTables = tables.filter((t) => !t.isActive);
@@ -217,25 +224,42 @@ export default function DashboardSection() {
                 const totalPct = Math.max(4, Math.round((d.revenue / maxDailyRevenue) * 100));
                 const cafePct = d.revenue > 0 ? Math.round((d.cafeRevenue / d.revenue) * 100) : 0;
                 const isMax = d.revenue === maxDailyRevenue && d.revenue > 0;
+                const isSelected = selectedDay?.date === d.date;
                 return (
-                  <div key={d.date} className="flex-1 min-w-[10px] flex flex-col items-center justify-end h-full">
-                    <div className="w-full rounded-t-sm overflow-hidden flex flex-col justify-end" style={{ height: `${totalPct}%` }}>
+                  <button
+                    key={d.date}
+                    className="flex-1 min-w-[10px] flex flex-col items-center justify-end h-full"
+                    onClick={() => setSelectedDay(isSelected ? null : d)}
+                  >
+                    <div
+                      className="w-full rounded-t-sm overflow-hidden flex flex-col justify-end"
+                      style={{ height: `${totalPct}%`, outline: isSelected ? "2px solid #e0b23a" : "none" }}
+                    >
                       {cafePct > 0 && (
                         <div className="w-full bg-amber-500" style={{ height: `${cafePct}%` }} />
                       )}
                       <div
                         className={`w-full flex-1 ${isMax ? "bg-green-400" : d.isWeekend ? "bg-purple-500" : "bg-blue-600"}`}
-                        title={`${d.date} (${d.weekday}) — میز: ${formatPrice(d.tableRevenue)} | کافه: ${formatPrice(d.cafeRevenue)} — ${d.count} فاکتور`}
                       />
                     </div>
                     <div className={`text-[10px] mt-1 ${d.isWeekend ? "text-purple-300" : "text-slate-500"}`}>
                       {d.weekday}
                     </div>
                     <div className="text-[9px] text-slate-600">{jalaaliDay(d.date)}</div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
+
+            {selectedDay && (
+              <div className="rounded-lg p-3 mt-2 text-sm" style={{ background: "#0e1512", border: "1px solid #c9971f" }}>
+                <div className="font-bold text-white mb-1">{selectedDay.date} ({selectedDay.weekday})</div>
+                <div className="flex justify-between text-slate-300"><span>💵 درآمد میز:</span><span>{formatPrice(selectedDay.tableRevenue)}</span></div>
+                <div className="flex justify-between text-slate-300"><span>☕ درآمد کافه:</span><span>{formatPrice(selectedDay.cafeRevenue)}</span></div>
+                <div className="flex justify-between text-white font-bold"><span>جمع:</span><span>{formatPrice(selectedDay.revenue)}</span></div>
+                <div className="flex justify-between text-slate-400 text-xs mt-1"><span>تعداد فاکتور:</span><span>{selectedDay.count.toLocaleString("fa-IR")}</span></div>
+              </div>
+            )}
 
             <div className="flex items-center justify-center gap-3 mt-3 text-[10px] text-slate-500 flex-wrap">
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-600 inline-block" /> میز</span>
@@ -296,10 +320,12 @@ export default function DashboardSection() {
                         {currentHeatmap[dayIdx].map((count, blockIdx) => {
                           const intensity = count / maxHeatCount;
                           const isPeak = dayIdx === currentPeak.day && blockIdx === currentPeak.block && count > 0;
+                          const isSelected = selectedCell?.day === dayIdx && selectedCell?.block === blockIdx;
                           return (
                             <td key={blockIdx} className="p-[1px]">
-                              <div
-                                className="rounded-md flex items-center justify-center"
+                              <button
+                                type="button"
+                                className="w-full rounded-md flex items-center justify-center"
                                 style={{
                                   height: "22px",
                                   background: isPeak
@@ -307,16 +333,16 @@ export default function DashboardSection() {
                                     : count === 0
                                     ? "#1e293b"
                                     : `rgba(37, 99, 235, ${0.15 + intensity * 0.85})`,
-                                  border: isPeak ? "1px solid #fbbf24" : "1px solid transparent",
+                                  border: isPeak ? "1px solid #fbbf24" : isSelected ? "1px solid #e0b23a" : "1px solid transparent",
                                 }}
-                                title={`${dayLabel} ${analytics.blockLabels[blockIdx]} — ${count} فاکتور`}
+                                onClick={() => setSelectedCell(isSelected ? null : { day: dayIdx, block: blockIdx, count })}
                               >
                                 {count > 0 && (
                                   <span className={`text-[9px] font-bold ${isPeak ? "text-slate-900" : "text-white"}`}>
                                     {count.toLocaleString("fa-IR")}
                                   </span>
                                 )}
-                              </div>
+                              </button>
                             </td>
                           );
                         })}
@@ -325,6 +351,15 @@ export default function DashboardSection() {
                   </tbody>
                 </table>
               </div>
+              {selectedCell && (
+                <div className="rounded-lg p-3 mt-2 text-sm text-center" style={{ background: "#0e1512", border: "1px solid #c9971f" }}>
+                  <span className="text-white font-bold">{analytics.dayLabels[selectedCell.day]}</span>
+                  <span className="text-slate-400"> — ساعت </span>
+                  <span className="text-white font-bold">{analytics.blockLabels[selectedCell.block]}</span>
+                  <span className="text-slate-400">: </span>
+                  <span style={{ color: "#e0b23a" }} className="font-bold">{selectedCell.count.toLocaleString("fa-IR")} فاکتور</span>
+                </div>
+              )}
               <div className="text-center mt-3 text-sm text-slate-400">
                 شلوغ‌ترین زمان:{" "}
                 <span className="text-amber-400 font-bold">
@@ -461,6 +496,7 @@ export default function DashboardSection() {
           </div>
         </div>
       )}
+
       {/* Pending Invoices */}
       {pendingInvoices.length > 0 && (
         <div className="card">
