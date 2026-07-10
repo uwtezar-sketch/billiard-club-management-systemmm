@@ -77,6 +77,7 @@ export const invoices = pgTable("invoices", {
   status: text("status").notNull().default("pending"), // 'paid' | 'debt' | 'pending'
   isPartial: boolean("is_partial").notNull().default(false),
   notes: text("notes"),
+  issuedByUsername: text("issued_by_username"),
   issuedAt: timestamp("issued_at").notNull().defaultNow(),
   settledAt: timestamp("settled_at"),
   jalaaliDate: text("jalaali_date"),
