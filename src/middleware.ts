@@ -10,6 +10,7 @@ const EMPLOYEE_ALLOWED: { method: string; pattern: RegExp }[] = [
   { method: "GET", pattern: /^\/api\/cafe$/ },
   { method: "GET", pattern: /^\/api\/settings$/ },
   { method: "GET", pattern: /^\/api\/reservations$/ },
+  { method: "PATCH", pattern: /^\/api\/reservations\/\d+$/ },
   { method: "POST", pattern: /^\/api\/sessions$/ },
   { method: "PATCH", pattern: /^\/api\/sessions\/\d+$/ },
   { method: "GET", pattern: /^\/api\/sessions\/\d+\/cafe$/ },
