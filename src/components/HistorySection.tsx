@@ -36,6 +36,7 @@ interface Invoice {
   isPartial: boolean;
   notes: string | null;
   issuedAt: string;
+  issuedByUsername: string | null;
   settledAt: string | null;
   jalaaliDate: string | null;
   items: InvoiceItem[];
@@ -311,6 +312,7 @@ export default function HistorySection() {
                       {inv.tableName && <span>{TYPE_MAP[inv.tableType || ""] || ""} {inv.tableName}</span>}
                       {inv.durationMinutes && <span>⏱ {formatDuration(inv.durationMinutes)}</span>}
                       <span>📅 {inv.jalaaliDate} — {time}</span>
+                      {inv.issuedByUsername && <span>👤 {inv.issuedByUsername}</span>}
                     </div>
                   </div>
                   <div className="text-left">
@@ -340,6 +342,9 @@ export default function HistorySection() {
               <div><span className="text-slate-400">تلفن:</span> <span className="text-white" dir="ltr">{selectedInvoice.customerPhone || "—"}</span></div>
               <div><span className="text-slate-400">میز:</span> <span className="text-white">{selectedInvoice.tableName || "—"}</span></div>
               <div><span className="text-slate-400">تاریخ:</span> <span className="text-white">{selectedInvoice.jalaaliDate}</span></div>
+              {selectedInvoice.issuedByUsername && (
+                <div><span className="text-slate-400">ثبت‌شده توسط:</span> <span className="text-white">{selectedInvoice.issuedByUsername}</span></div>
+              )}
               {selectedInvoice.startTime && (
                 <div><span className="text-slate-400">شروع:</span> <span className="text-white">{new Date(selectedInvoice.startTime).toTimeString().slice(0, 5)}</span></div>
               )}
