@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { invoices, invoiceItems, sessions, tables, debtors, debts, cafeMenu } from "@/db/schema";
 import { eq, desc, like, and, gte, lte, inArray } from "drizzle-orm";
 import { toJalaali, generateInvoiceNumber } from "@/lib/jalaali";
+import { verifySessionToken } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   try {
@@ -102,6 +103,9 @@ export async function POST(req: NextRequest) {
     const invoiceNumber = generateInvoiceNumber();
     const jalaaliDate = toJalaali(new Date());
 
+    const sessionToken = req.cookies.get("session")?.value;
+    const currentUser = sessionToken ? verifySessionToken(sessionToken) : null;
+
     const [invoice] = await db
       .insert(invoices)
       .values({
@@ -127,6 +131,7 @@ export async function POST(req: NextRequest) {
         status: status || "pending",
         isPartial: isPartial || false,
         notes: notes || null,
+        issuedByUsername: currentUser?.username || null,
         jalaaliDate,
         settledAt: status === "paid" ? new Date() : null,
       })
