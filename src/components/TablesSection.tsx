@@ -724,13 +724,17 @@ function TableCard({
             🔴 فعال
           </span>
         )}
+        {table.isActive && table.activeSession && isSessionForgotten(table.activeSession.startTime) && (
+          <span className="badge" style={{ background: "#8f1d2c", color: "#fecaca" }}>
+            ⚠️ بیش از {LONG_SESSION_HOURS} ساعت
+          </span>
+        )}
         {hasReservation && !table.isActive && (
           <span className="badge" style={{ background: "#92400e", color: "#fde68a" }}>
             📅 رزرو امروز
           </span>
         )}
       </div>
-
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div>
