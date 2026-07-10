@@ -27,10 +27,10 @@ interface Table {
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  registered: { label: "ثبت شده", color: "#d97706" },
-  done: { label: "انجام شده", color: "#16a34a" },
-  cancelled: { label: "لغو شده", color: "#dc2626" },
-  expired: { label: "منقضی شده", color: "#64748b" },
+  registered: { label: "ثبت شده", color: "#e0b23a" },
+  done: { label: "انجام شده", color: "#5ee89b" },
+  cancelled: { label: "لغو شده", color: "#f27f8a" },
+  expired: { label: "منقضی شده", color: "#8a9488" },
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -38,6 +38,8 @@ const TYPE_LABELS: Record<string, string> = {
   eightball: "ایت‌بال",
   playstation: "پلی‌استیشن",
 };
+
+const tomorrowJalaali = () => toJalaali(new Date(Date.now() + 24 * 60 * 60 * 1000));
 
 export default function ReservationsSection() {
   const { showToast } = useToast();
@@ -77,9 +79,13 @@ export default function ReservationsSection() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const today = todayJalaali();
   const filtered = reservations
     .filter((r) => !filterDate || r.reservationDate === filterDate)
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    .sort((a, b) => {
+      const d = a.reservationDate.localeCompare(b.reservationDate);
+      return d !== 0 ? d : a.startTime.localeCompare(b.startTime);
+    });
 
   function resetForm() {
     setForm({
@@ -110,9 +116,28 @@ export default function ReservationsSection() {
     });
   }
 
+  function findConflict(): Reservation | null {
+    if (!form.tableId) return null;
+    return (
+      reservations.find(
+        (r) =>
+          r.id !== editRes?.id &&
+          r.status === "registered" &&
+          String(r.tableId) === form.tableId &&
+          r.reservationDate === form.reservationDate &&
+          r.startTime === form.startTime
+      ) || null
+    );
+  }
+
   async function handleSave() {
     if (!form.customerName || !form.startTime) {
       showToast("نام مشتری و ساعت شروع الزامی است", "error");
+      return;
+    }
+    const conflict = findConflict();
+    if (conflict) {
+      showToast(`این میز همون ساعت برای «${conflict.customerName}» رزرو شده`, "error");
       return;
     }
     setLoading(true);
@@ -201,7 +226,7 @@ export default function ReservationsSection() {
       showToast("رزرو به سشن فعال تبدیل شد", "success");
       fetchData();
     } else {
-      showToast("خطا در تبدیل رزرو", "error");
+      showToast("خطا در تبدیل رزرو (شاید میز الان فعاله)", "error");
     }
   }
 
@@ -220,7 +245,7 @@ export default function ReservationsSection() {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs text-slate-400 mb-1">نوع میز</label>
-          <select className="form-input" value={form.tableType} onChange={(e) => setForm((p) => ({ ...p, tableType: e.target.value }))}>
+          <select className="form-input" value={form.tableType} onChange={(e) => setForm((p) => ({ ...p, tableType: e.target.value, tableId: "" }))}>
             <option value="snooker">اسنوکر</option>
             <option value="eightball">ایت‌بال</option>
             <option value="playstation">پلی‌استیشن</option>
@@ -239,7 +264,13 @@ export default function ReservationsSection() {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs text-slate-400 mb-1">تاریخ رزرو (شمسی)</label>
-          <input className="form-input" placeholder="1403/04/25" value={form.reservationDate} onChange={(e) => setForm((p) => ({ ...p, reservationDate: e.target.value }))} dir="ltr" />
+          <div className="flex gap-1">
+            <input className="form-input" placeholder="1403/04/25" value={form.reservationDate} onChange={(e) => setForm((p) => ({ ...p, reservationDate: e.target.value }))} dir="ltr" />
+          </div>
+          <div className="flex gap-1 mt-1">
+            <button type="button" className="btn btn-secondary btn-sm text-xs" onClick={() => setForm((p) => ({ ...p, reservationDate: todayJalaali() }))}>امروز</button>
+            <button type="button" className="btn btn-secondary btn-sm text-xs" onClick={() => setForm((p) => ({ ...p, reservationDate: tomorrowJalaali() }))}>فردا</button>
+          </div>
         </div>
         <div>
           <label className="block text-xs text-slate-400 mb-1">ساعت شروع *</label>
@@ -278,20 +309,22 @@ export default function ReservationsSection() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <button className="btn btn-primary" onClick={() => { resetForm(); setAddModal(true); }}>
+          ➕ رزرو جدید
+        </button>
+      </div>
+
+      <div className="flex gap-2 flex-wrap items-center">
+        <button className={`btn btn-sm ${filterDate === today ? "btn-primary" : "btn-secondary"}`} onClick={() => setFilterDate(today)}>امروز</button>
+        <button className={`btn btn-sm ${filterDate === tomorrowJalaali() ? "btn-primary" : "btn-secondary"}`} onClick={() => setFilterDate(tomorrowJalaali())}>فردا</button>
+        <button className={`btn btn-sm ${!filterDate ? "btn-primary" : "btn-secondary"}`} onClick={() => setFilterDate("")}>همه</button>
         <input
-          className="form-input w-40"
-          placeholder="تاریخ شمسی"
+          className="form-input w-36"
+          placeholder="تاریخ خاص"
           value={filterDate}
           onChange={(e) => setFilterDate(e.target.value)}
           dir="ltr"
         />
-        <button
-          className="btn btn-secondary btn-sm"
-          onClick={() => setFilterDate("")}
-        >همه</button>
-        <button className="btn btn-primary" onClick={() => { resetForm(); setAddModal(true); }}>
-          ➕ رزرو جدید
-        </button>
       </div>
 
       {filtered.length === 0 ? (
@@ -299,19 +332,23 @@ export default function ReservationsSection() {
       ) : (
         <div className="space-y-3">
           {filtered.map((res) => {
-            const s = STATUS_LABELS[res.status] || { label: res.status, color: "#64748b" };
+            const s = STATUS_LABELS[res.status] || { label: res.status, color: "#8a9488" };
+            const isPast = res.status === "registered" && res.reservationDate < today;
             return (
-              <div key={res.id} className="card">
+              <div key={res.id} className="card" style={isPast ? { opacity: 0.6 } : undefined}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className="font-bold text-white">{res.customerName}</span>
                       {res.customerPhone && (
-                        <span className="text-xs text-slate-400 dir-ltr" dir="ltr">{res.customerPhone}</span>
+                        <a href={`tel:${res.customerPhone}`} className="text-xs" style={{ color: "#5ecfe0" }} dir="ltr">{res.customerPhone}</a>
                       )}
-                      <span className="badge" style={{ background: s.color + "33", color: s.color }}>
+                      <span className="badge" style={{ background: s.color + "22", color: s.color }}>
                         {s.label}
                       </span>
+                      {isPast && (
+                        <span className="badge" style={{ background: "#8a948822", color: "#8a9488" }}>⏱ گذشته</span>
+                      )}
                     </div>
                     <div className="text-sm text-slate-400 flex gap-4 flex-wrap">
                       <span>📅 {res.reservationDate}</span>
@@ -332,7 +369,7 @@ export default function ReservationsSection() {
                           >▶ شروع</button>
                         )}
                         <button className="btn btn-secondary btn-sm" onClick={() => openEditModal(res)}>✏️</button>
-                        <button className="btn btn-sm" style={{ background: "#78350f", color: "#fde68a" }} onClick={() => handleStatusChange(res.id, "cancelled")}>❌ لغو</button>
+                        <button className="btn btn-sm" style={{ background: "#3a2a0c", color: "#e0b23a" }} onClick={() => handleStatusChange(res.id, "cancelled")}>❌ لغو</button>
                       </>
                     )}
                     <button className="btn btn-danger btn-sm" onClick={() => setDeleteId(res.id)}>🗑</button>
