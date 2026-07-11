@@ -225,13 +225,13 @@ export default function CafeSection() {
                 <div className="text-white text-sm">{c.item.name}</div>
                 <div className="flex items-center gap-2">
                   <button
-                    className="w-7 h-7 rounded-full text-white text-lg leading-none"
+                    className="w-9 h-9 rounded-full text-white text-lg leading-none"
                     style={{ background: "#26332a" }}
                     onClick={() => removeFromCart(c.item.id)}
                   >−</button>
                   <span className="text-white font-bold w-6 text-center">{c.qty}</span>
                   <button
-                    className="w-7 h-7 rounded-full text-white text-lg leading-none"
+                    className="w-9 h-9 rounded-full text-white text-lg leading-none"
                     style={{ background: "#26332a" }}
                     onClick={() => addToCart(c.item)}
                   >+</button>
