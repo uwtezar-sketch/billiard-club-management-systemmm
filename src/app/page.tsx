@@ -103,7 +103,10 @@ export default function Home() {
 
   return (
     <ToastProvider>
-      <div className="min-h-screen flex flex-col" style={{ maxWidth: "480px", margin: "0 auto" }}>
+      <div
+        className="min-h-screen flex flex-col mx-auto w-full max-w-[480px] md:max-w-[860px] md:border-x"
+        style={{ borderColor: "#26332a" }}
+      >
         {/* Header */}
         <header
           className="sticky top-0 z-50 px-4 py-3"
@@ -168,13 +171,11 @@ export default function Home() {
 
         {/* Bottom Navigation */}
         <nav
-          className="fixed bottom-0 left-0 right-0 z-50 px-1 py-1"
+          className="fixed bottom-0 left-0 right-0 z-50 px-1 py-1 mx-auto w-full max-w-[480px] md:max-w-[860px]"
           style={{
             background: "linear-gradient(to top, #0a0d0b, #0a0d0bcc)",
             borderTop: "1px solid #26332a",
             backdropFilter: "blur(12px)",
-            maxWidth: "480px",
-            margin: "0 auto",
             paddingBottom: "env(safe-area-inset-bottom, 8px)",
           }}
         >
