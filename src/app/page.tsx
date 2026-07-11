@@ -27,9 +27,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "settings", label: "تنظیمات", icon: "⚙️" },
 ];
 
-// این ۵ تا همیشه تو نوار پایین‌ان (هم برای مدیر هم کارمند)
 const PRIMARY_TABS: Tab[] = ["tables", "cafe", "reservations", "debtors", "history"];
-// این ۴ تا فقط برای مدیر، از پشت دکمه‌ی «بیشتر»
 const MORE_TABS: Tab[] = ["report", "dashboard", "users", "settings"];
 
 export default function Home() {
@@ -39,6 +37,32 @@ export default function Home() {
   const [role, setRole] = useState<"admin" | "employee" | null>(null);
   const [username, setUsername] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
+  const [activeTablesCount, setActiveTablesCount] = useState(0);
+  const [unpaidDebtorsCount, setUnpaidDebtorsCount] = useState(0);
+
+  useEffect(() => {
+    async function fetchCounts() {
+      try {
+        const [tablesRes, debtorsRes] = await Promise.all([
+          fetch("/api/tables"),
+          fetch("/api/debtors"),
+        ]);
+        const tablesData = await tablesRes.json();
+        if (Array.isArray(tablesData)) {
+          setActiveTablesCount(tablesData.filter((t: { isActive: boolean }) => t.isActive).length);
+        }
+        const debtorsData = await debtorsRes.json();
+        if (Array.isArray(debtorsData)) {
+          setUnpaidDebtorsCount(debtorsData.filter((d: { totalDebt: string }) => Number(d.totalDebt) > 0).length);
+        }
+      } catch {
+        // بی‌سروصدا نادیده گرفته میشه، این فقط یه نشونه‌ی کوچیکه
+      }
+    }
+    fetchCounts();
+    const interval = setInterval(fetchCounts, 20000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const update = () => {
@@ -155,16 +179,44 @@ export default function Home() {
           }}
         >
           <div className="flex justify-around">
-            {primaryTabs.map((tab) => (
-              <button
-                key={tab.id}
-                className={`nav-item flex-shrink-0 ${activeTab === tab.id ? "active" : ""}`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                <span className="text-xl">{tab.icon}</span>
-                <span className="text-xs">{tab.label}</span>
-              </button>
-            ))}
+            {primaryTabs.map((tab) => {
+              const badgeCount = tab.id === "tables" ? activeTablesCount : tab.id === "debtors" ? unpaidDebtorsCount : 0;
+              return (
+                <button
+                  key={tab.id}
+                  className={`nav-item flex-shrink-0 ${activeTab === tab.id ? "active" : ""}`}
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{ position: "relative" }}
+                >
+                  <span className="text-xl" style={{ position: "relative" }}>
+                    {tab.icon}
+                    {badgeCount > 0 && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: "-6px",
+                          left: "-10px",
+                          background: tab.id === "tables" ? "#1a7a4c" : "#8f1d2c",
+                          color: "#fff",
+                          borderRadius: "9999px",
+                          fontSize: "9px",
+                          minWidth: "16px",
+                          height: "16px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "0 3px",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        {badgeCount.toLocaleString("fa-IR")}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-xs">{tab.label}</span>
+                </button>
+              );
+            })}
             {role === "admin" && (
               <button
                 className={`nav-item flex-shrink-0 ${isMoreActive ? "active" : ""}`}
