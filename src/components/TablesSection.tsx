@@ -79,6 +79,19 @@ const LONG_SESSION_HOURS = 4;
 function isSessionForgotten(startTime: string) {
   return Date.now() - new Date(startTime).getTime() > LONG_SESSION_HOURS * 60 * 60 * 1000;
 }
+function useSecondsAgo(date: Date | null) {
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => forceTick((n) => n + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+  if (!date) return null;
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 5) return "همین الان";
+  if (seconds < 60) return `${seconds.toLocaleString("fa-IR")} ثانیه پیش`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes.toLocaleString("fa-IR")} دقیقه پیش`;
+}
 
 function TimerDisplay({ startTime, isActive, pricePerHour }: { startTime: string; isActive: boolean; pricePerHour: number }) {
   const elapsed = useTimer(isActive ? startTime : null, isActive);
@@ -122,8 +135,9 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
   const [menuItems, setMenuItems] = useState<CafeMenuItem[]>([]);
   const [settings, setSettings] = useState<Settings>({});
   const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [loading, setLoading] = useState(true);
-
+const [loading, setLoading] = useState(true);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [syncFailed, setSyncFailed] = useState(false);
   // Modals
   const [startModal, setStartModal] = useState<{ open: boolean; table: Table | null }>({ open: false, table: null });
   const [sessionModal, setSessionModal] = useState<{ open: boolean; table: Table | null; session: Session | null; cafeOrders: CafeOrder[] }>({
@@ -163,7 +177,10 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
       setMenuItems(await menuRes.json());
       setSettings(await settingsRes.json());
       setReservations(await reservationsRes.json());
+      setLastSync(new Date());
+      setSyncFailed(false);
     } catch {
+      setSyncFailed(true);
       showToast("خطا در دریافت اطلاعات", "error");
     } finally {
       setLoading(false);
@@ -366,6 +383,8 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
     );
   }
 
+  const secondsAgoLabel = useSecondsAgo(lastSync);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -380,6 +399,15 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
 
   return (
     <div className="space-y-6">
+      {/* Sync status */}
+      <div className="flex items-center justify-between text-xs">
+        {syncFailed ? (
+          <span style={{ color: "#f27f8a" }}>⚠️ عدم اتصال — داده‌ها ممکنه قدیمی باشن</span>
+        ) : (
+          <span className="text-slate-500">🟢 بروزرسانی: {secondsAgoLabel}</span>
+        )}
+      </div>
+
       {/* Snooker Tables */}
       {snookerTables.length > 0 && (
       <div>
