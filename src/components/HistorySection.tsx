@@ -191,7 +191,7 @@ export default function HistorySection() {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="card space-y-3">
+      <div className="card space-y-3 sticky top-0 z-10" style={{ background: "#121912" }}>
         <input
           className="form-input"
           placeholder="جستجو نام یا شماره فاکتور..."
