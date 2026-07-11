@@ -279,7 +279,10 @@ export default function HistorySection() {
       {loading ? (
         <div className="text-center text-slate-400 py-8">در حال بارگذاری...</div>
       ) : invoices.length === 0 ? (
-        <div className="text-center text-slate-500 py-12">فاکتوری یافت نشد</div>
+        <div className="text-center py-12">
+          <div className="text-4xl mb-2">📂</div>
+          <div className="text-slate-500">فاکتوری با این فیلترها پیدا نشد</div>
+        </div>
       ) : (
         <div className="space-y-2">
           {invoices.map((inv) => {
