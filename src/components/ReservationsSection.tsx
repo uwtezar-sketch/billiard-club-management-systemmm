@@ -302,29 +302,31 @@ export default function ReservationsSection() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-3 items-center flex-wrap">
-        <input
-          className="form-input flex-1 min-w-32"
-          placeholder="جستجو نام یا تلفن..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <button className="btn btn-primary" onClick={() => { resetForm(); setAddModal(true); }}>
-          ➕ رزرو جدید
-        </button>
-      </div>
+      <div className="space-y-3 sticky top-0 z-10 py-2" style={{ background: "#0a0d0b" }}>
+        <div className="flex gap-3 items-center flex-wrap">
+          <input
+            className="form-input flex-1 min-w-32"
+            placeholder="جستجو نام یا تلفن..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <button className="btn btn-primary" onClick={() => { resetForm(); setAddModal(true); }}>
+            ➕ رزرو جدید
+          </button>
+        </div>
 
-      <div className="flex gap-2 flex-wrap items-center">
-        <button className={`btn btn-sm ${filterDate === today ? "btn-primary" : "btn-secondary"}`} onClick={() => setFilterDate(today)}>امروز</button>
-        <button className={`btn btn-sm ${filterDate === tomorrowJalaali() ? "btn-primary" : "btn-secondary"}`} onClick={() => setFilterDate(tomorrowJalaali())}>فردا</button>
-        <button className={`btn btn-sm ${!filterDate ? "btn-primary" : "btn-secondary"}`} onClick={() => setFilterDate("")}>همه</button>
-        <input
-          className="form-input w-36"
-          placeholder="تاریخ خاص"
-          value={filterDate}
-          onChange={(e) => setFilterDate(e.target.value)}
-          dir="ltr"
-        />
+        <div className="flex gap-2 flex-wrap items-center">
+          <button className={`btn btn-sm ${filterDate === today ? "btn-primary" : "btn-secondary"}`} onClick={() => setFilterDate(today)}>امروز</button>
+          <button className={`btn btn-sm ${filterDate === tomorrowJalaali() ? "btn-primary" : "btn-secondary"}`} onClick={() => setFilterDate(tomorrowJalaali())}>فردا</button>
+          <button className={`btn btn-sm ${!filterDate ? "btn-primary" : "btn-secondary"}`} onClick={() => setFilterDate("")}>همه</button>
+          <input
+            className="form-input w-36"
+            placeholder="تاریخ خاص"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            dir="ltr"
+          />
+        </div>
       </div>
 
       {filtered.length === 0 ? (
