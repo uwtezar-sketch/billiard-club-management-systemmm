@@ -328,7 +328,13 @@ export default function ReservationsSection() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="text-center text-slate-500 py-12">رزروی یافت نشد</div>
+        <div className="text-center py-12">
+          <div className="text-4xl mb-2">📅</div>
+          <div className="text-slate-500 mb-3">رزروی برای این بازه ثبت نشده</div>
+          <button className="btn btn-primary btn-sm" onClick={() => { resetForm(); setAddModal(true); }}>
+            ➕ ثبت رزرو جدید
+          </button>
+        </div>
       ) : (
         <div className="space-y-3">
           {filtered.map((res) => {
