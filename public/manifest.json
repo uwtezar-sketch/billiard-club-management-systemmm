@@ -4,8 +4,8 @@
   "description": "سامانه مدیریت هوشمند باشگاه بیلیارد ارم",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
+  "background_color": "#0a0d0b",
+  "theme_color": "#0a0d0b",
   "icons": [
     {
       "src": "/icon-192.png",
