@@ -76,6 +76,7 @@ export default function HistorySection() {
   const { showToast } = useToast();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [showAdvancedDate, setShowAdvancedDate] = useState(false);
   const [daysFilter, setDaysFilter] = useState("30");
@@ -94,6 +95,11 @@ export default function HistorySection() {
   const [editNewDebtorPhone, setEditNewDebtorPhone] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
     try {
@@ -103,7 +109,7 @@ export default function HistorySection() {
       if (dateFilter) params.set("date", dateFilter);
       else if (daysFilter) params.set("days", daysFilter);
       if (typeFilter) params.set("tableType", typeFilter);
-      if (search) params.set("search", search);
+      if (debouncedSearch) params.set("search", debouncedSearch);
       const res = await fetch(`/api/invoices?${params}`);
       setInvoices(await res.json());
     } catch {
@@ -111,7 +117,7 @@ export default function HistorySection() {
     } finally {
       setLoading(false);
     }
-  }, [search, dateFilter, daysFilter, statusFilter, typeFilter, paymentFilter, showToast]);
+  }, [debouncedSearch, dateFilter, daysFilter, statusFilter, typeFilter, paymentFilter, showToast]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
@@ -277,7 +283,11 @@ export default function HistorySection() {
       )}
 
       {loading ? (
-        <div className="text-center text-slate-400 py-8">در حال بارگذاری...</div>
+        <div className="space-y-2">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="skeleton" style={{ height: "76px" }} />
+          ))}
+        </div>
       ) : invoices.length === 0 ? (
         <div className="text-center py-12">
           <div className="text-4xl mb-2">📂</div>
