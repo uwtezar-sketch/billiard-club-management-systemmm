@@ -389,13 +389,13 @@ const [loading, setLoading] = useState(true);
     return (
       <div className="space-y-6">
         <div className="skeleton" style={{ height: "20px", width: "140px" }} />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2].map((i) => (
             <div key={i} className="skeleton" style={{ height: "180px" }} />
           ))}
         </div>
         <div className="skeleton" style={{ height: "20px", width: "140px" }} />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2].map((i) => (
             <div key={i} className="skeleton" style={{ height: "180px" }} />
           ))}
@@ -428,7 +428,7 @@ const [loading, setLoading] = useState(true);
             {snookerTables.filter((t) => t.isActive).length}/{snookerTables.length} فعال
           </span>
         </h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {snookerTables.map((table) => (
             <TableCard
               key={table.id}
@@ -452,7 +452,7 @@ const [loading, setLoading] = useState(true);
             {eightballTables.filter((t) => t.isActive).length}/{eightballTables.length} فعال
           </span>
         </h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {eightballTables.map((table) => (
             <TableCard
               key={table.id}
@@ -476,7 +476,7 @@ const [loading, setLoading] = useState(true);
             {playstationTables.filter((t) => t.isActive).length}/{playstationTables.length} فعال
           </span>
         </h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {playstationTables.map((table) => (
             <TableCard
               key={table.id}
