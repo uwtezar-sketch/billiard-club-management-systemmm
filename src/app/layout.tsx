@@ -18,7 +18,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#0f172a",
+  themeColor: "#0a0d0b",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -30,7 +30,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           rel="stylesheet"
         />
       </head>
-      <body className="bg-slate-900 text-white antialiased" style={{ fontFamily: "'Vazirmatn', sans-serif" }}>
+      <body className="antialiased" style={{ fontFamily: "'Vazirmatn', sans-serif", background: "#0a0d0b", color: "#f3ede2" }}>
         {children}
       </body>
     </html>
