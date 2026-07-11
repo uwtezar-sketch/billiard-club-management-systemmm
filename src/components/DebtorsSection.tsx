@@ -38,6 +38,7 @@ export default function DebtorsSection() {
   const { showToast } = useToast();
   const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filter, setFilter] = useState<"withDebt" | "all">("withDebt");
   const [addDebtorModal, setAddDebtorModal] = useState(false);
   const [addDebtModal, setAddDebtModal] = useState<Debtor | null>(null);
@@ -53,14 +54,19 @@ export default function DebtorsSection() {
   const [debtorForm, setDebtorForm] = useState({ name: "", phone: "", notes: "" });
   const [debtForm, setDebtForm] = useState({ amount: "", description: "", jalaaliDate: todayJalaali() });
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/debtors${search ? `?search=${search}` : ""}`);
+      const res = await fetch(`/api/debtors${debouncedSearch ? `?search=${debouncedSearch}` : ""}`);
       setDebtors(await res.json());
     } catch {
       showToast("خطا در دریافت بدهکاران", "error");
     }
-  }, [search, showToast]);
+  }, [debouncedSearch, showToast]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
