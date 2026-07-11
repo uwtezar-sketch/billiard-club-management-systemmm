@@ -384,6 +384,13 @@ export default function DebtorsSection() {
           <div>
             <label className="block text-xs text-slate-400 mb-1">تاریخ (شمسی)</label>
             <input className="form-input" value={debtForm.jalaaliDate} onChange={(e) => setDebtForm((p) => ({ ...p, jalaaliDate: e.target.value }))} dir="ltr" />
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm text-xs mt-1"
+              onClick={() => setDebtForm((p) => ({ ...p, jalaaliDate: todayJalaali() }))}
+            >
+              امروز
+            </button>
           </div>
           <div className="flex gap-3">
             <button className="btn btn-secondary flex-1" onClick={() => setAddDebtModal(null)}>انصراف</button>
