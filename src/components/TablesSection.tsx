@@ -387,8 +387,19 @@ const [loading, setLoading] = useState(true);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-slate-400 text-lg">در حال بارگذاری...</div>
+      <div className="space-y-6">
+        <div className="skeleton" style={{ height: "20px", width: "140px" }} />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {[1, 2].map((i) => (
+            <div key={i} className="skeleton" style={{ height: "180px" }} />
+          ))}
+        </div>
+        <div className="skeleton" style={{ height: "20px", width: "140px" }} />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {[1, 2].map((i) => (
+            <div key={i} className="skeleton" style={{ height: "180px" }} />
+          ))}
+        </div>
       </div>
     );
   }
