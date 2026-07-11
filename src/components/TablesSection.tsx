@@ -655,7 +655,7 @@ const [loading, setLoading] = useState(true);
                       <div className="flex items-center gap-2">
                         <span className="text-sm" style={{ color: "#5ee89b" }}>{formatPrice(Number(order.totalPrice))}</span>
                         <button
-                          className="text-sm"
+                          className="text-sm w-8 h-8 flex items-center justify-center rounded-full"
                           style={{ color: "#f27f8a" }}
                           onClick={() => removeCafeItem(sessionModal.session!.id, order.id)}
                         >✕</button>
