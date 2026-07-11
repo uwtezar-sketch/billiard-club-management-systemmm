@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { ToastProvider } from "@/components/Toast";
+import Modal from "@/components/Modal";
 import TablesSection from "@/components/TablesSection";
 import ReservationsSection from "@/components/ReservationsSection";
 import DebtorsSection from "@/components/DebtorsSection";
@@ -26,13 +27,18 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "settings", label: "تنظیمات", icon: "⚙️" },
 ];
 
-const EMPLOYEE_TABS: Tab[] = ["tables", "cafe", "reservations", "debtors", "history"];
+// این ۵ تا همیشه تو نوار پایین‌ان (هم برای مدیر هم کارمند)
+const PRIMARY_TABS: Tab[] = ["tables", "cafe", "reservations", "debtors", "history"];
+// این ۴ تا فقط برای مدیر، از پشت دکمه‌ی «بیشتر»
+const MORE_TABS: Tab[] = ["report", "dashboard", "users", "settings"];
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("tables");
   const [currentTime, setCurrentTime] = useState("");
   const [currentDate, setCurrentDate] = useState("");
   const [role, setRole] = useState<"admin" | "employee" | null>(null);
+  const [username, setUsername] = useState("");
+  const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
     const update = () => {
@@ -48,12 +54,15 @@ export default function Home() {
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setRole(d?.role || null))
+      .then((d) => {
+        setRole(d?.role || null);
+        setUsername(d?.username || "");
+      })
       .catch(() => setRole(null));
   }, []);
 
   useEffect(() => {
-    if (role === "employee" && !EMPLOYEE_TABS.includes(activeTab)) {
+    if (role === "employee" && !PRIMARY_TABS.includes(activeTab)) {
       setActiveTab("tables");
     }
   }, [role, activeTab]);
@@ -63,7 +72,10 @@ export default function Home() {
     window.location.href = "/login";
   }
 
-  const visibleTabs = role === "employee" ? TABS.filter((t) => EMPLOYEE_TABS.includes(t.id)) : TABS;
+  const primaryTabs = TABS.filter((t) => PRIMARY_TABS.includes(t.id));
+  const moreTabs = TABS.filter((t) => MORE_TABS.includes(t.id));
+  const isMoreActive = role === "admin" && MORE_TABS.includes(activeTab);
+  const activeMoreTab = moreTabs.find((t) => t.id === activeTab);
 
   return (
     <ToastProvider>
@@ -89,13 +101,30 @@ export default function Home() {
                 <div className="text-lg font-bold" style={{ color: "#e0b23a" }}>{currentTime}</div>
                 <div className="text-xs text-slate-500">{currentDate}</div>
               </div>
-              <button
-                onClick={handleLogout}
-                className="text-slate-400 text-xs border border-slate-700 rounded-lg px-2 py-1"
-                title="خروج"
-              >
-                🚪 خروج
-              </button>
+              <div className="flex flex-col items-end gap-1">
+                {username && (
+                  <div className="flex items-center gap-1 text-xs">
+                    <span className="text-slate-300">{username}</span>
+                    <span
+                      className="badge"
+                      style={
+                        role === "admin"
+                          ? { background: "#3a2a0c", color: "#e0b23a" }
+                          : { background: "#26332a", color: "#8a9488" }
+                      }
+                    >
+                      {role === "admin" ? "مدیر" : "کارمند"}
+                    </span>
+                  </div>
+                )}
+                <button
+                  onClick={handleLogout}
+                  className="text-slate-400 text-xs border border-slate-700 rounded-lg px-2 py-1"
+                  title="خروج"
+                >
+                  🚪 خروج
+                </button>
+              </div>
             </div>
           </div>
         </header>
@@ -125,8 +154,8 @@ export default function Home() {
             paddingBottom: "env(safe-area-inset-bottom, 8px)",
           }}
         >
-          <div className="flex justify-around overflow-x-auto">
-            {visibleTabs.map((tab) => (
+          <div className="flex justify-around">
+            {primaryTabs.map((tab) => (
               <button
                 key={tab.id}
                 className={`nav-item flex-shrink-0 ${activeTab === tab.id ? "active" : ""}`}
@@ -136,8 +165,37 @@ export default function Home() {
                 <span className="text-xs">{tab.label}</span>
               </button>
             ))}
+            {role === "admin" && (
+              <button
+                className={`nav-item flex-shrink-0 ${isMoreActive ? "active" : ""}`}
+                onClick={() => setMoreOpen(true)}
+              >
+                <span className="text-xl">{isMoreActive ? activeMoreTab?.icon : "☰"}</span>
+                <span className="text-xs">{isMoreActive ? activeMoreTab?.label : "بیشتر"}</span>
+              </button>
+            )}
           </div>
         </nav>
+
+        {/* More Sheet (admin only) */}
+        <Modal open={moreOpen} onClose={() => setMoreOpen(false)} title="بخش‌های بیشتر">
+          <div className="grid grid-cols-2 gap-3">
+            {moreTabs.map((tab) => (
+              <button
+                key={tab.id}
+                className={`btn ${activeTab === tab.id ? "btn-primary" : "btn-secondary"}`}
+                style={{ flexDirection: "column", height: "72px", gap: "4px" }}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setMoreOpen(false);
+                }}
+              >
+                <span className="text-2xl">{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
+        </Modal>
       </div>
     </ToastProvider>
   );
