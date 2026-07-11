@@ -139,7 +139,7 @@ export default function SettingsSection() {
         <h2 className="text-lg font-bold text-white mb-4">💰 قیمت‌گذاری (تومان / ساعت)</h2>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-green-400 mb-1">🎱 اسنوکر</label>
+            <label className="block text-sm mb-1" style={{ color: "#5ee89b" }}>🎱 اسنوکر</label>
             <input
               className="form-input"
               type="number"
@@ -148,6 +148,28 @@ export default function SettingsSection() {
               onChange={(e) => setSettings((p) => ({ ...p, snooker_price: e.target.value }))}
             />
             <div className="text-xs text-slate-500 mt-1">{formatPrice(Number(settings.snooker_price))} در ساعت</div>
+          </div>
+          <div>
+            <label className="block text-sm mb-1" style={{ color: "#e0b23a" }}>🎳 ایت‌بال</label>
+            <input
+              className="form-input"
+              type="number"
+              dir="ltr"
+              value={settings.eightball_price}
+              onChange={(e) => setSettings((p) => ({ ...p, eightball_price: e.target.value }))}
+            />
+            <div className="text-xs text-slate-500 mt-1">{formatPrice(Number(settings.eightball_price))} در ساعت</div>
+          </div>
+          <div>
+            <label className="block text-sm mb-1" style={{ color: "#c78bd6" }}>🎮 پلی‌استیشن</label>
+            <input
+              className="form-input"
+              type="number"
+              dir="ltr"
+              value={settings.playstation_price}
+              onChange={(e) => setSettings((p) => ({ ...p, playstation_price: e.target.value }))}
+            />
+            <div className="text-xs text-slate-500 mt-1">{formatPrice(Number(settings.playstation_price))} در ساعت</div>
           </div>
           <div>
             <label className="block text-sm text-blue-400 mb-1">🎳 ایت‌بال</label>
@@ -194,10 +216,10 @@ export default function SettingsSection() {
         </div>
         <div className="space-y-2">
           {menuItems.map((item) => (
-            <div key={item.id} className="flex items-center justify-between bg-slate-800 rounded-lg px-3 py-2">
+            <div key={item.id} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "#0e1512" }}>
               <div>
                 <span className="text-white font-medium">{item.name}</span>
-                <span className="text-green-400 text-sm mr-3">{formatPrice(Number(item.price))}</span>
+                <span className="text-sm mr-3" style={{ color: "#5ee89b" }}>{formatPrice(Number(item.price))}</span>
               </div>
               <div className="flex gap-2">
                 <button
@@ -227,7 +249,7 @@ export default function SettingsSection() {
         </div>
         <div className="space-y-2">
           {tables.map((table) => (
-            <div key={table.id} className="flex items-center justify-between bg-slate-800 rounded-lg px-3 py-2">
+            <div key={table.id} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "#0e1512" }}>
               <div>
                 <span className="text-white font-medium">{table.name}</span>
                 <span className="text-slate-400 text-xs mr-2">
