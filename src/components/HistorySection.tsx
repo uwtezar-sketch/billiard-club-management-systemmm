@@ -220,6 +220,38 @@ export default function HistorySection() {
 
   const totalAmountSum = invoices.reduce((s, i) => s + Number(i.totalAmount), 0);
 
+  function handleExportExcel() {
+    const headers = ["شماره فاکتور", "تاریخ", "ساعت", "نام مشتری", "تلفن", "میز", "مدت (دقیقه)", "مبلغ", "وضعیت", "روش پرداخت", "ثبت‌کننده"];
+    const statusText: Record<string, string> = { paid: "تسویه شده", pending: "در انتظار", debt: "بدهکاری" };
+    const paymentText: Record<string, string> = { cash: "نقدی", card: "کارت", debt: "بدهکاری" };
+    const rows = invoices.map((inv) => [
+      inv.invoiceNumber,
+      inv.jalaaliDate || "",
+      new Date(inv.issuedAt).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" }),
+      inv.customerName || "بدون نام",
+      inv.customerPhone || "",
+      inv.tableName || "",
+      inv.durationMinutes ?? "",
+      inv.totalAmount,
+      statusText[inv.status] || inv.status,
+      inv.paymentMethod ? paymentText[inv.paymentMethod] || inv.paymentMethod : "",
+      inv.issuedByUsername || "",
+    ]);
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\r\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `تاریخچه-فاکتورها-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-4">
       {/* Filters */}
@@ -302,9 +334,14 @@ export default function HistorySection() {
 
       {/* Summary */}
       {!loading && invoices.length > 0 && (
-        <div className="rounded-xl p-3 flex items-center justify-between" style={{ background: "#0d3b2622", border: "1px solid #1a7a4c55" }}>
+        <div className="rounded-xl p-3 flex items-center justify-between gap-2 flex-wrap" style={{ background: "#0d3b2622", border: "1px solid #1a7a4c55" }}>
           <span className="text-sm text-slate-400">{invoices.length.toLocaleString("fa-IR")} فاکتور</span>
-          <span className="font-bold" style={{ color: "#5ee89b" }}>{formatPrice(totalAmountSum)}</span>
+          <div className="flex items-center gap-3">
+            <span className="font-bold" style={{ color: "#5ee89b" }}>{formatPrice(totalAmountSum)}</span>
+            <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}>
+              ⬇️ اکسل
+            </button>
+          </div>
         </div>
       )}
 
