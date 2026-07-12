@@ -27,7 +27,7 @@ export async function PATCH(
     const { id } = await params;
     const invoiceId = parseInt(id);
     const body = await req.json();
-    const { status, settledAt, paymentMethod, debtorId, newDebtorName, newDebtorPhone } = body;
+    const { status, settledAt, paymentMethod, debtorId, newDebtorName, newDebtorPhone, customerName, customerPhone } = body;
 
     const [existing] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
     if (!existing) return NextResponse.json({ error: "فاکتور یافت نشد" }, { status: 404 });
