@@ -174,6 +174,31 @@ export default function DebtorsSection() {
 
   const overdueCount = enriched.filter((e) => e.isOverdue).length;
 
+  function handleExportExcel() {
+    const headers = ["نام", "تلفن", "مجموع بدهی معوق", "تعداد ردیف بدهی", "روزهای معوقی", "یادداشت"];
+    const rows = enriched.map(({ debtor, unpaidDebts, unpaidTotal, oldestDays }) => [
+      debtor.name,
+      debtor.phone || "",
+      unpaidTotal,
+      unpaidDebts.length,
+      unpaidDebts.length > 0 ? oldestDays : "",
+      debtor.notes || "",
+    ]);
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\r\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `بدهکاران-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-4">
       {/* Summary */}
@@ -201,6 +226,9 @@ export default function DebtorsSection() {
         />
         <button className="btn btn-primary" onClick={() => setAddDebtorModal(true)}>
           ➕ بدهکار جدید
+        </button>
+        <button className="btn btn-secondary" onClick={handleExportExcel}>
+          ⬇️ اکسل
         </button>
       </div>
 
