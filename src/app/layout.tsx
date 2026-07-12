@@ -30,7 +30,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           rel="stylesheet"
         />
       </head>
-      <body className="antialiased" style={{ fontFamily: "'Vazirmatn', sans-serif", background: "#0a0d0b", color: "#f3ede2" }}>
+      <body className="antialiased" style={{ fontFamily: "'Vazirmatn', sans-serif" }}>
         {children}
       </body>
     </html>
