@@ -523,7 +523,7 @@ const [loading, setLoading] = useState(true);
               dir="ltr"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-400 mb-1">ساعت شروع</label>
               <input
@@ -595,7 +595,7 @@ const [loading, setLoading] = useState(true);
             {/* Edit Session Info */}
             <div className="card space-y-3">
               <h3 className="text-sm font-bold text-slate-300">✏️ ویرایش اطلاعات سشن</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">ساعت شروع</label>
                   <input
