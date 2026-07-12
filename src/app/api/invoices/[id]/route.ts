@@ -36,6 +36,8 @@ export async function PATCH(
     if (paymentMethod !== undefined) updateData.paymentMethod = paymentMethod;
     if (status !== undefined) updateData.status = status;
     if (settledAt !== undefined) updateData.settledAt = settledAt ? new Date(settledAt) : new Date();
+    if (customerName !== undefined) updateData.customerName = customerName || null;
+    if (customerPhone !== undefined) updateData.customerPhone = customerPhone || null;
 
     const wasDebt = existing.status === "debt";
     const willBeDebt = paymentMethod === "debt";
