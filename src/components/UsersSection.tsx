@@ -102,34 +102,30 @@ export default function UsersSection() {
             placeholder="نام کاربری"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="w-full rounded-lg px-3 py-2 bg-slate-800 border border-slate-700 text-white outline-none"
+            className="form-input"
           />
           <input
             placeholder="رمز عبور"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg px-3 py-2 bg-slate-800 border border-slate-700 text-white outline-none"
+            className="form-input"
           />
           <div className="flex gap-2">
             <button
               onClick={() => setRole("employee")}
-              className={`flex-1 rounded-lg py-2 text-sm font-medium ${
-                role === "employee" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400"
-              }`}
+              className={`btn flex-1 ${role === "employee" ? "btn-primary" : "btn-secondary"}`}
             >
               کارمند
             </button>
             <button
               onClick={() => setRole("admin")}
-              className={`flex-1 rounded-lg py-2 text-sm font-medium ${
-                role === "admin" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400"
-              }`}
+              className={`btn flex-1 ${role === "admin" ? "btn-primary" : "btn-secondary"}`}
             >
               مدیر
             </button>
           </div>
-          <button onClick={handleAdd} className="w-full rounded-lg py-2.5 font-bold text-white bg-green-600">
+          <button onClick={handleAdd} className="btn btn-success btn-full">
             افزودن کاربر
           </button>
         </div>
@@ -142,12 +138,14 @@ export default function UsersSection() {
         ) : (
           <div className="space-y-2">
             {list.map((u) => (
-              <div key={u.id} className="bg-slate-800 rounded-lg px-3 py-2 flex justify-between items-center">
+              <div key={u.id} className="flex justify-between items-center rounded-lg px-3 py-2" style={{ background: "#0e1512" }}>
                 <div>
                   <div className="text-white text-sm font-medium">{u.username}</div>
-                  <div className="text-xs text-slate-500">{u.role === "admin" ? "مدیر" : "کارمند"}</div>
+                  <div className="text-xs" style={{ color: u.role === "admin" ? "#e0b23a" : "#8a9488" }}>
+                    {u.role === "admin" ? "مدیر" : "کارمند"}
+                  </div>
                 </div>
-                <button onClick={() => setDeleteId(u.id)} className="text-red-400 text-sm">
+                <button onClick={() => setDeleteId(u.id)} className="btn btn-danger btn-sm">
                   🗑️ حذف
                 </button>
               </div>
