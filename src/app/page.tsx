@@ -39,13 +39,15 @@ export default function Home() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [activeTablesCount, setActiveTablesCount] = useState(0);
   const [unpaidDebtorsCount, setUnpaidDebtorsCount] = useState(0);
+  const [pendingInvoicesCount, setPendingInvoicesCount] = useState(0);
 
   useEffect(() => {
     async function fetchCounts() {
       try {
-        const [tablesRes, debtorsRes] = await Promise.all([
+        const [tablesRes, debtorsRes, pendingRes] = await Promise.all([
           fetch("/api/tables"),
           fetch("/api/debtors"),
+          fetch("/api/invoices?status=pending"),
         ]);
         const tablesData = await tablesRes.json();
         if (Array.isArray(tablesData)) {
@@ -54,6 +56,10 @@ export default function Home() {
         const debtorsData = await debtorsRes.json();
         if (Array.isArray(debtorsData)) {
           setUnpaidDebtorsCount(debtorsData.filter((d: { totalDebt: string }) => Number(d.totalDebt) > 0).length);
+        }
+        const pendingData = await pendingRes.json();
+        if (Array.isArray(pendingData)) {
+          setPendingInvoicesCount(pendingData.length);
         }
       } catch {
         // بی‌سروصدا نادیده گرفته میشه، این فقط یه نشونه‌ی کوچیکه
@@ -195,7 +201,7 @@ useEffect(() => {
         >
           <div className="flex justify-around">
             {primaryTabs.map((tab) => {
-              const badgeCount = tab.id === "tables" ? activeTablesCount : tab.id === "debtors" ? unpaidDebtorsCount : 0;
+              const badgeCount = tab.id === "tables" ? activeTablesCount : tab.id === "debtors" ? unpaidDebtorsCount : tab.id === "history" ? pendingInvoicesCount : 0;
               return (
                 <button
                   key={tab.id}
