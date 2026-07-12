@@ -64,6 +64,20 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
+useEffect(() => {
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+      const response = await originalFetch(...args);
+      if (response.status === 401) {
+        const input = args[0];
+        const url = typeof input === "string" ? input : input instanceof Request ? input.url : String(input);
+        if (!url.includes("/api/auth/")) {
+          window.location.href = "/login";
+        }
+      }
+      return response;
+    };
+  }, []);
   useEffect(() => {
     const update = () => {
       const now = new Date();
