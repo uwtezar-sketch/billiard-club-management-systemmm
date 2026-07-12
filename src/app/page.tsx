@@ -40,6 +40,22 @@ export default function Home() {
   const [activeTablesCount, setActiveTablesCount] = useState(0);
   const [unpaidDebtorsCount, setUnpaidDebtorsCount] = useState(0);
   const [pendingInvoicesCount, setPendingInvoicesCount] = useState(0);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? localStorage.getItem("theme") : null;
+    if (saved === "light") {
+      setTheme("light");
+      document.documentElement.setAttribute("data-theme", "light");
+    }
+  }, []);
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("theme", next);
+  }
 
   useEffect(() => {
     async function fetchCounts() {
@@ -172,6 +188,13 @@ useEffect(() => {
                   🚪 خروج
                 </button>
               </div>
+              <button
+                onClick={toggleTheme}
+                className="text-slate-400 text-lg border border-slate-700 rounded-lg w-9 h-9 flex items-center justify-center flex-shrink-0"
+                title="تغییر تم"
+              >
+                {theme === "dark" ? "☀️" : "🌙"}
+              </button>
             </div>
           </div>
         </header>
