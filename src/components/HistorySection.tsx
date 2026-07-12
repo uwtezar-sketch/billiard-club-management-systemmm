@@ -94,6 +94,9 @@ export default function HistorySection() {
   const [editNewDebtorName, setEditNewDebtorName] = useState("");
   const [editNewDebtorPhone, setEditNewDebtorPhone] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [editCustomerName, setEditCustomerName] = useState("");
+  const [editCustomerPhone, setEditCustomerPhone] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 400);
@@ -128,6 +131,8 @@ export default function HistorySection() {
       setEditDebtorId("");
       setEditNewDebtorName(selectedInvoice.customerName || "");
       setEditNewDebtorPhone(selectedInvoice.customerPhone || "");
+      setEditCustomerName(selectedInvoice.customerName || "");
+      setEditCustomerPhone(selectedInvoice.customerPhone || "");
     }
   }, [selectedInvoice]);
 
@@ -150,6 +155,27 @@ export default function HistorySection() {
     setDeleteInvoiceId(null);
     setSelectedInvoice(null);
     fetchInvoices();
+  }
+
+  async function handleSaveCustomerInfo() {
+    if (!selectedInvoice) return;
+    setSavingName(true);
+    try {
+      const res = await fetch(`/api/invoices/${selectedInvoice.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerName: editCustomerName, customerPhone: editCustomerPhone }),
+      });
+      if (!res.ok) {
+        showToast("خطا در ذخیره نام مشتری", "error");
+        return;
+      }
+      showToast("نام فاکتور بروزرسانی شد", "success");
+      fetchInvoices();
+      setSelectedInvoice((prev) => (prev ? { ...prev, customerName: editCustomerName || null, customerPhone: editCustomerPhone || null } : prev));
+    } finally {
+      setSavingName(false);
+    }
   }
 
   async function handleSavePaymentEdit() {
@@ -350,9 +376,22 @@ export default function HistorySection() {
       >
         {selectedInvoice && (
           <div className="space-y-4 text-sm">
+            <div className="rounded-lg p-3 space-y-2" style={{ background: "#0e1512" }}>
+              <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                  <label className="block text-[10px] text-slate-500 mb-1">نام مشتری</label>
+                  <input className="form-input" value={editCustomerName} onChange={(e) => setEditCustomerName(e.target.value)} placeholder="بدون نام" />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-[10px] text-slate-500 mb-1">تلفن</label>
+                  <input className="form-input" value={editCustomerPhone} onChange={(e) => setEditCustomerPhone(e.target.value)} dir="ltr" placeholder="—" />
+                </div>
+                <button className="btn btn-primary btn-sm" onClick={handleSaveCustomerInfo} disabled={savingName}>
+                  💾
+                </button>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-2 rounded-lg p-3" style={{ background: "#0e1512" }}>
-              <div><span className="text-slate-400">مشتری:</span> <span className="text-white">{selectedInvoice.customerName || "—"}</span></div>
-              <div><span className="text-slate-400">تلفن:</span> <span className="text-white" dir="ltr">{selectedInvoice.customerPhone || "—"}</span></div>
               <div><span className="text-slate-400">میز:</span> <span className="text-white">{selectedInvoice.tableName || "—"}</span></div>
               <div><span className="text-slate-400">تاریخ:</span> <span className="text-white">{selectedInvoice.jalaaliDate}</span></div>
               {selectedInvoice.issuedByUsername && (
