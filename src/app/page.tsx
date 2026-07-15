@@ -11,9 +11,10 @@ import SettingsSection from "@/components/SettingsSection";
 import DashboardSection from "@/components/DashboardSection";
 import CafeSection from "@/components/CafeSection";
 import UsersSection from "@/components/UsersSection";
+import CustomersSection from "@/components/CustomersSection";
 import { todayJalaali } from "@/lib/jalaali";
 
-type Tab = "tables" | "cafe" | "reservations" | "debtors" | "history" | "report" | "dashboard" | "settings" | "users";
+type Tab = "tables" | "cafe" | "reservations" | "debtors" | "history" | "report" | "dashboard" | "settings" | "users" | "customers";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "tables", label: "میزها", icon: "🎱" },
@@ -23,12 +24,15 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "history", label: "تاریخچه", icon: "📂" },
   { id: "report", label: "گزارش", icon: "📊" },
   { id: "dashboard", label: "داشبورد", icon: "📈" },
+  { id: "customers", label: "باشگاه مشتریان", icon: "🎖️" },
   { id: "users", label: "کاربران", icon: "👤" },
   { id: "settings", label: "تنظیمات", icon: "⚙️" },
 ];
 
+// این ۵ تا همیشه تو نوار پایین‌ان (هم برای مدیر هم کارمند)
 const PRIMARY_TABS: Tab[] = ["tables", "cafe", "reservations", "debtors", "history"];
-const MORE_TABS: Tab[] = ["report", "dashboard", "users", "settings"];
+// این ۵ تا فقط برای مدیر، از پشت دکمه‌ی «بیشتر»
+const MORE_TABS: Tab[] = ["report", "dashboard", "customers", "users", "settings"];
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("tables");
