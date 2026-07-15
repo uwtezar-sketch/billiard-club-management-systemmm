@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { customers, invoices } from "@/db/schema";
-import { eq, like, or } from "drizzle-orm";
+import { like, or } from "drizzle-orm";
+import { normalizePhone } from "@/lib/phone";
 
 export async function GET(req: NextRequest) {
   try {
@@ -18,7 +19,8 @@ export async function GET(req: NextRequest) {
     const allInvoices = await db.select().from(invoices);
 
     const result = allCustomers.map((c) => {
-      const matching = allInvoices.filter((i) => i.customerPhone === c.phone);
+      const normalizedCustomerPhone = normalizePhone(c.phone);
+      const matching = allInvoices.filter((i) => normalizePhone(i.customerPhone) === normalizedCustomerPhone);
       const visitCount = matching.length;
       const totalSpent = matching.reduce((s, i) => s + Number(i.totalAmount), 0);
       const cafeSpent = matching.reduce((s, i) => s + Number(i.cafeTotal), 0);
@@ -56,7 +58,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "نام و شماره تلفن الزامی است" }, { status: 400 });
     }
 
-    const [existing] = await db.select().from(customers).where(eq(customers.phone, phone));
+    const existingCustomers = await db.select().from(customers);
+    const normalizedNewPhone = normalizePhone(phone);
+    const existing = existingCustomers.find((c) => normalizePhone(c.phone) === normalizedNewPhone);
     if (existing) {
       return NextResponse.json({ error: "این شماره تلفن قبلاً تو باشگاه مشتریان ثبت شده" }, { status: 400 });
     }
