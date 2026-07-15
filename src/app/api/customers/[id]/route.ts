@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { customers, invoices, invoiceItems } from "@/db/schema";
+import { customers, invoices, invoiceItems, debtors } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
+import { normalizePhone } from "@/lib/phone";
 
 export async function GET(
   _req: NextRequest,
@@ -12,9 +13,10 @@ export async function GET(
     const [customer] = await db.select().from(customers).where(eq(customers.id, parseInt(id)));
     if (!customer) return NextResponse.json({ error: "مشتری یافت نشد" }, { status: 404 });
 
+    const normalizedPhone = normalizePhone(customer.phone);
     const allInvoices = await db.select().from(invoices);
     const matching = allInvoices
-      .filter((i) => i.customerPhone === customer.phone)
+      .filter((i) => normalizePhone(i.customerPhone) === normalizedPhone)
       .sort((a, b) => new Date(b.issuedAt).getTime() - new Date(a.issuedAt).getTime());
 
     const visitCount = matching.length;
@@ -42,6 +44,10 @@ export async function GET(
         .slice(0, 5);
     }
 
+    const allDebtors = await db.select().from(debtors);
+    const matchingDebtor = allDebtors.find((d) => normalizePhone(d.phone) === normalizedPhone && normalizedPhone !== "");
+    const outstandingDebt = matchingDebtor ? Number(matchingDebtor.totalDebt) : 0;
+
     return NextResponse.json({
       ...customer,
       visitCount,
@@ -50,6 +56,7 @@ export async function GET(
       cafeSpent,
       favoriteType,
       favoriteCafeItems,
+      outstandingDebt,
       invoices: matching.slice(0, 20),
     });
   } catch (e) {
