@@ -166,3 +166,12 @@ export const activityLogs = pgTable("activity_logs", {
   details: jsonb("details"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+// ─── Customers (باشگاه مشتریان) ───────────────────────────────────────────────
+export const customers = pgTable("customers", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  phone: text("phone").notNull().unique(),
+  notes: text("notes"),
+  isVip: boolean("is_vip").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
