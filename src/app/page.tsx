@@ -189,6 +189,7 @@ useEffect(() => {
           {activeTab === "history" && <HistorySection />}
           {activeTab === "report" && <DailyReportSection />}
           {activeTab === "dashboard" && <DashboardSection />}
+          {activeTab === "customers" && <CustomersSection />}
           {activeTab === "users" && <UsersSection />}
           {activeTab === "settings" && <SettingsSection />}
         </main>
