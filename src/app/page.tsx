@@ -40,8 +40,7 @@ export default function Home() {
   const [activeTablesCount, setActiveTablesCount] = useState(0);
   const [unpaidDebtorsCount, setUnpaidDebtorsCount] = useState(0);
   const [pendingInvoicesCount, setPendingInvoicesCount] = useState(0);
-  const [pendingInvoicesCount, setPendingInvoicesCount] = useState(0);
-
+  
   useEffect(() => {
     async function fetchCounts() {
       try {
