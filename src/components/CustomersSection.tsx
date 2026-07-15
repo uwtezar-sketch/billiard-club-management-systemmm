@@ -23,6 +23,7 @@ interface CustomerDetail extends Customer {
   gameSpent: number;
   favoriteType: string | null;
   favoriteCafeItems: { name: string; quantity: number }[];
+  outstandingDebt: number;
   invoices: {
     id: number;
     invoiceNumber: string;
@@ -350,6 +351,12 @@ export default function CustomersSection() {
                 <div className="text-[10px] text-slate-500">خرج کافه</div>
               </div>
             </div>
+
+            {detail.outstandingDebt > 0 && (
+              <div className="rounded-lg p-3 text-sm" style={{ background: "#3d101633", border: "1px solid #8f1d2c" }}>
+                ⚠️ بدهی باز: <span className="font-bold" style={{ color: "#f27f8a" }}>{formatPrice(detail.outstandingDebt)}</span>
+              </div>
+            )}
 
             {detail.favoriteType && (
               <div className="text-slate-300">
