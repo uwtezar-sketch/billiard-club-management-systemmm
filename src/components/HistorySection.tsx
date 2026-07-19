@@ -97,6 +97,12 @@ export default function HistorySection() {
   const [editCustomerName, setEditCustomerName] = useState("");
   const [editCustomerPhone, setEditCustomerPhone] = useState("");
   const [savingName, setSavingName] = useState(false);
+  const [pendingAll, setPendingAll] = useState<Invoice[]>([]);
+  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
+  const [bulkSettlingKey, setBulkSettlingKey] = useState<string | null>(null);
+  const [editingItems, setEditingItems] = useState(false);
+  const [cafeMenuItems, setCafeMenuItems] = useState<{ id: number; name: string; price: string }[]>([]);
+  const [itemActionLoading, setItemActionLoading] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 400);
@@ -122,7 +128,17 @@ export default function HistorySection() {
     }
   }, [debouncedSearch, dateFilter, daysFilter, statusFilter, typeFilter, paymentFilter, showToast]);
 
+  const fetchPendingAll = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/invoices?status=pending`);
+      setPendingAll(await res.json());
+    } catch {
+      // بی‌سروصدا نادیده گرفته میشه
+    }
+  }, []);
+
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
+  useEffect(() => { fetchPendingAll(); }, [fetchPendingAll]);
 
   useEffect(() => {
     if (selectedInvoice) {
@@ -133,6 +149,7 @@ export default function HistorySection() {
       setEditNewDebtorPhone(selectedInvoice.customerPhone || "");
       setEditCustomerName(selectedInvoice.customerName || "");
       setEditCustomerPhone(selectedInvoice.customerPhone || "");
+      setEditingItems(false);
     }
   }, [selectedInvoice]);
 
@@ -215,6 +232,94 @@ export default function HistorySection() {
       fetchInvoices();
     } finally {
       setSavingEdit(false);
+    }
+  }
+
+  interface PendingGroup {
+    key: string;
+    name: string;
+    phone: string | null;
+    invoices: Invoice[];
+    total: number;
+  }
+
+  const pendingGroups: PendingGroup[] = (() => {
+    const map = new Map<string, PendingGroup>();
+    for (const inv of pendingAll) {
+      const key = inv.customerPhone || inv.customerName || `#${inv.id}`;
+      if (!map.has(key)) {
+        map.set(key, { key, name: inv.customerName || "بدون نام", phone: inv.customerPhone, invoices: [], total: 0 });
+      }
+      const g = map.get(key)!;
+      g.invoices.push(inv);
+      g.total += Number(inv.totalAmount);
+    }
+    return [...map.values()].filter((g) => g.invoices.length >= 2).sort((a, b) => b.total - a.total);
+  })();
+
+  async function handleBulkSettle(group: PendingGroup) {
+    setBulkSettlingKey(group.key);
+    try {
+      for (const inv of group.invoices) {
+        await fetch(`/api/invoices/${inv.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "paid" }),
+        });
+      }
+      showToast(`همه‌ی فاکتورهای ${group.name} تسویه شد`, "success");
+      fetchInvoices();
+      fetchPendingAll();
+    } finally {
+      setBulkSettlingKey(null);
+    }
+  }
+
+  async function fetchCafeMenuItems() {
+    try {
+      const res = await fetch("/api/cafe");
+      setCafeMenuItems(await res.json());
+    } catch {
+      showToast("خطا در دریافت منوی کافه", "error");
+    }
+  }
+
+  async function handleAddCafeItem(item: { id: number; name: string; price: string }) {
+    if (!selectedInvoice) return;
+    setItemActionLoading(true);
+    try {
+      const res = await fetch(`/api/invoices/${selectedInvoice.id}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cafeItemId: item.id, name: item.name, quantity: 1, unitPrice: Number(item.price) }),
+      });
+      if (!res.ok) {
+        showToast("خطا در افزودن آیتم", "error");
+        return;
+      }
+      const updated = await res.json();
+      setSelectedInvoice(updated);
+      fetchInvoices();
+      showToast(`${item.name} اضافه شد`, "success");
+    } finally {
+      setItemActionLoading(false);
+    }
+  }
+
+  async function handleRemoveCafeItem(itemId: number) {
+    if (!selectedInvoice) return;
+    setItemActionLoading(true);
+    try {
+      const res = await fetch(`/api/invoices/${selectedInvoice.id}/items?itemId=${itemId}`, { method: "DELETE" });
+      if (!res.ok) {
+        showToast("خطا در حذف آیتم", "error");
+        return;
+      }
+      const updated = await res.json();
+      setSelectedInvoice(updated);
+      fetchInvoices();
+    } finally {
+      setItemActionLoading(false);
     }
   }
 
@@ -331,6 +436,57 @@ export default function HistorySection() {
           ))}
         </div>
       </div>
+
+      {/* Pending grouped by customer */}
+      {pendingGroups.length > 0 && (
+        <div className="card" style={{ borderColor: "#8f1d2c" }}>
+          <h3 className="font-bold mb-3" style={{ color: "#f27f8a" }}>
+            🔴 فاکتورهای در انتظارِ چندباره (به‌تفکیک مشتری)
+          </h3>
+          <div className="space-y-2">
+            {pendingGroups.map((g) => {
+              const isExpanded = expandedGroupKey === g.key;
+              return (
+                <div key={g.key} className="rounded-lg p-3" style={{ background: "#3d101622", border: "1px solid #8f1d2c55" }}>
+                  <div
+                    className="flex items-center justify-between cursor-pointer"
+                    onClick={() => setExpandedGroupKey(isExpanded ? null : g.key)}
+                  >
+                    <div>
+                      <div className="text-white font-medium">{g.name}</div>
+                      <div className="text-xs text-slate-400">
+                        {g.invoices.length.toLocaleString("fa-IR")} فاکتور در انتظار
+                        {g.phone && <span dir="ltr"> — {g.phone}</span>}
+                      </div>
+                    </div>
+                    <div className="font-bold" style={{ color: "#f27f8a" }}>{formatPrice(g.total)}</div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="mt-3 space-y-2">
+                      {g.invoices.map((inv) => (
+                        <div key={inv.id} className="flex justify-between text-xs rounded px-3 py-2" style={{ background: "#0e1512" }}>
+                          <span className="text-slate-300">
+                            {inv.invoiceNumber} — {inv.jalaaliDate} — {inv.tableName || ""}
+                          </span>
+                          <span style={{ color: "#f27f8a" }}>{formatPrice(Number(inv.totalAmount))}</span>
+                        </div>
+                      ))}
+                      <button
+                        className="btn btn-success btn-sm btn-full"
+                        onClick={() => handleBulkSettle(g)}
+                        disabled={bulkSettlingKey === g.key}
+                      >
+                        {bulkSettlingKey === g.key ? "در حال تسویه..." : `✅ تسویه همه (${formatPrice(g.total)})`}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Summary */}
       {!loading && invoices.length > 0 && (
@@ -450,21 +606,66 @@ export default function HistorySection() {
                 <span className="text-slate-400">هزینه بازی:</span>
                 <span className="text-white">{formatPrice(Number(selectedInvoice.gamePrice))}</span>
               </div>
-              {Number(selectedInvoice.cafeTotal) > 0 && (
-                <>
-                  <div className="text-slate-400 font-bold">آیتم‌های کافه:</div>
-                  {selectedInvoice.items.map((item) => (
-                    <div key={item.id} className="flex justify-between pr-4">
-                      <span className="text-white">{item.name} ×{item.quantity}</span>
+
+              <div className="flex items-center justify-between">
+                <div className="text-slate-400 font-bold">آیتم‌های کافه:</div>
+                <button
+                  className="btn btn-secondary btn-sm text-xs"
+                  onClick={() => {
+                    const next = !editingItems;
+                    setEditingItems(next);
+                    if (next && cafeMenuItems.length === 0) fetchCafeMenuItems();
+                  }}
+                >
+                  {editingItems ? "بستن" : "✏️ ویرایش"}
+                </button>
+              </div>
+
+              {selectedInvoice.items.length > 0 ? (
+                selectedInvoice.items.map((item) => (
+                  <div key={item.id} className="flex justify-between items-center pr-4">
+                    <span className="text-white">{item.name} ×{item.quantity}</span>
+                    <div className="flex items-center gap-2">
                       <span style={{ color: "#5ee89b" }}>{formatPrice(Number(item.totalPrice))}</span>
+                      {editingItems && (
+                        <button
+                          className="w-8 h-8 flex items-center justify-center rounded-full text-sm"
+                          style={{ color: "#f27f8a" }}
+                          onClick={() => handleRemoveCafeItem(item.id)}
+                          disabled={itemActionLoading}
+                        >✕</button>
+                      )}
                     </div>
-                  ))}
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">جمع کافه:</span>
-                    <span className="text-white">{formatPrice(Number(selectedInvoice.cafeTotal))}</span>
                   </div>
-                </>
+                ))
+              ) : (
+                <div className="text-xs text-slate-500 pr-4">آیتمی ثبت نشده</div>
               )}
+
+              {Number(selectedInvoice.cafeTotal) > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-slate-400">جمع کافه:</span>
+                  <span className="text-white">{formatPrice(Number(selectedInvoice.cafeTotal))}</span>
+                </div>
+              )}
+
+              {editingItems && (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 pt-1">
+                  {cafeMenuItems.map((item) => (
+                    <button
+                      key={item.id}
+                      className="rounded-lg p-2 text-right text-sm"
+                      style={{ background: "#1a2420" }}
+                      onClick={() => handleAddCafeItem(item)}
+                      disabled={itemActionLoading}
+                    >
+                      <div className="text-white font-medium text-xs">{item.name}</div>
+                      <div className="text-xs" style={{ color: "#e0b23a" }}>{formatPrice(Number(item.price))}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {Number(selectedInvoice.discountAmount) > 0 && (
                 <div className="flex justify-between">
                   <span className="text-slate-400">تخفیف:</span>
