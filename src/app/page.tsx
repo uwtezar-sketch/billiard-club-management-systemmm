@@ -131,57 +131,120 @@ useEffect(() => {
         className="min-h-screen flex flex-col mx-auto w-full max-w-[480px] md:max-w-[860px] md:border-x"
         style={{ borderColor: "#26332a" }}
       >
-        {/* Header */}
-        <header
-          className="sticky top-0 z-50 px-4 py-3"
-          style={{
-            background: "linear-gradient(135deg, #0a0d0b 0%, #14211a 100%)",
-            borderBottom: "1px solid #26332a",
-            backdropFilter: "blur(12px)",
-          }}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-lg font-black text-white tracking-tight">
-                🎱 بیلیارد ارم
-              </h1>
-              <p className="text-xs text-slate-400">سامانه مدیریت هوشمند</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="text-left">
-                <div className="text-lg font-bold" style={{ color: "#e0b23a" }}>{currentTime}</div>
-                <div className="text-xs text-slate-500">{currentDate}</div>
+        {/* Sticky header + nav together */}
+        <div className="sticky top-0 z-50">
+          {/* Header */}
+          <header
+            className="px-4 py-3"
+            style={{
+              background: "linear-gradient(135deg, #0a0d0b 0%, #14211a 100%)",
+              borderBottom: "1px solid #26332a",
+              backdropFilter: "blur(12px)",
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-lg font-black text-white tracking-tight">
+                  🎱 بیلیارد ارم
+                </h1>
+                <p className="text-xs text-slate-400">سامانه مدیریت هوشمند</p>
               </div>
-              <div className="flex flex-col items-end gap-1">
-                {username && (
-                  <div className="flex items-center gap-1 text-xs">
-                    <span className="text-slate-300">{username}</span>
-                    <span
-                      className="badge"
-                      style={
-                        role === "admin"
-                          ? { background: "#3a2a0c", color: "#e0b23a" }
-                          : { background: "#26332a", color: "#8a9488" }
-                      }
-                    >
-                      {role === "admin" ? "مدیر" : "کارمند"}
+              <div className="flex items-center gap-3">
+                <div className="text-left">
+                  <div className="text-lg font-bold" style={{ color: "#e0b23a" }}>{currentTime}</div>
+                  <div className="text-xs text-slate-500">{currentDate}</div>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  {username && (
+                    <div className="flex items-center gap-1 text-xs">
+                      <span className="text-slate-300">{username}</span>
+                      <span
+                        className="badge"
+                        style={
+                          role === "admin"
+                            ? { background: "#3a2a0c", color: "#e0b23a" }
+                            : { background: "#26332a", color: "#8a9488" }
+                        }
+                      >
+                        {role === "admin" ? "مدیر" : "کارمند"}
+                      </span>
+                    </div>
+                  )}
+                  <button
+                    onClick={handleLogout}
+                    className="text-slate-400 text-xs border border-slate-700 rounded-lg px-2 py-1"
+                    title="خروج"
+                  >
+                    🚪 خروج
+                  </button>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {/* Top Navigation */}
+          <nav
+            className="px-1 py-1"
+            style={{
+              background: "linear-gradient(to bottom, #0a0d0b, #0a0d0bcc)",
+              borderBottom: "1px solid #26332a",
+              backdropFilter: "blur(12px)",
+            }}
+          >
+            <div className="flex justify-around overflow-x-auto">
+              {primaryTabs.map((tab) => {
+                const badgeCount = tab.id === "tables" ? activeTablesCount : tab.id === "debtors" ? unpaidDebtorsCount : tab.id === "history" ? pendingInvoicesCount : 0;
+                return (
+                  <button
+                    key={tab.id}
+                    className={`nav-item flex-shrink-0 ${activeTab === tab.id ? "active" : ""}`}
+                    onClick={() => setActiveTab(tab.id)}
+                    style={{ position: "relative" }}
+                  >
+                    <span className="text-xl" style={{ position: "relative" }}>
+                      {tab.icon}
+                      {badgeCount > 0 && (
+                        <span
+                          style={{
+                            position: "absolute",
+                            top: "-6px",
+                            left: "-10px",
+                            background: tab.id === "tables" ? "#1a7a4c" : "#8f1d2c",
+                            color: "#fff",
+                            borderRadius: "9999px",
+                            fontSize: "9px",
+                            minWidth: "16px",
+                            height: "16px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding: "0 3px",
+                            fontWeight: "bold",
+                          }}
+                        >
+                          {badgeCount.toLocaleString("fa-IR")}
+                        </span>
+                      )}
                     </span>
-                  </div>
-                )}
+                    <span className="text-xs">{tab.label}</span>
+                  </button>
+                );
+              })}
+              {role === "admin" && (
                 <button
-                  onClick={handleLogout}
-                  className="text-slate-400 text-xs border border-slate-700 rounded-lg px-2 py-1"
-                  title="خروج"
+                  className={`nav-item flex-shrink-0 ${isMoreActive ? "active" : ""}`}
+                  onClick={() => setMoreOpen(true)}
                 >
-                  🚪 خروج
+                  <span className="text-xl">{isMoreActive ? activeMoreTab?.icon : "☰"}</span>
+                  <span className="text-xs">{isMoreActive ? activeMoreTab?.label : "بیشتر"}</span>
                 </button>
-              </div>
+              )}
             </div>
-          </div>
-        </header>
+          </nav>
+        </div>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-y-auto p-4 pb-24">
+        <main className="flex-1 overflow-y-auto p-4">
           {activeTab === "tables" && <TablesSection />}
           {activeTab === "cafe" && <CafeSection />}
           {activeTab === "reservations" && <ReservationsSection />}
@@ -193,67 +256,6 @@ useEffect(() => {
           {activeTab === "users" && <UsersSection />}
           {activeTab === "settings" && <SettingsSection />}
         </main>
-
-        {/* Bottom Navigation */}
-        <nav
-          className="fixed bottom-0 left-0 right-0 z-50 px-1 py-1 mx-auto w-full max-w-[480px] md:max-w-[860px]"
-          style={{
-            background: "linear-gradient(to top, #0a0d0b, #0a0d0bcc)",
-            borderTop: "1px solid #26332a",
-            backdropFilter: "blur(12px)",
-            paddingBottom: "env(safe-area-inset-bottom, 8px)",
-          }}
-        >
-          <div className="flex justify-around">
-            {primaryTabs.map((tab) => {
-              const badgeCount = tab.id === "tables" ? activeTablesCount : tab.id === "debtors" ? unpaidDebtorsCount : tab.id === "history" ? pendingInvoicesCount : 0;
-              return (
-                <button
-                  key={tab.id}
-                  className={`nav-item flex-shrink-0 ${activeTab === tab.id ? "active" : ""}`}
-                  onClick={() => setActiveTab(tab.id)}
-                  style={{ position: "relative" }}
-                >
-                  <span className="text-xl" style={{ position: "relative" }}>
-                    {tab.icon}
-                    {badgeCount > 0 && (
-                      <span
-                        style={{
-                          position: "absolute",
-                          top: "-6px",
-                          left: "-10px",
-                          background: tab.id === "tables" ? "#1a7a4c" : "#8f1d2c",
-                          color: "#fff",
-                          borderRadius: "9999px",
-                          fontSize: "9px",
-                          minWidth: "16px",
-                          height: "16px",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          padding: "0 3px",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        {badgeCount.toLocaleString("fa-IR")}
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-xs">{tab.label}</span>
-                </button>
-              );
-            })}
-            {role === "admin" && (
-              <button
-                className={`nav-item flex-shrink-0 ${isMoreActive ? "active" : ""}`}
-                onClick={() => setMoreOpen(true)}
-              >
-                <span className="text-xl">{isMoreActive ? activeMoreTab?.icon : "☰"}</span>
-                <span className="text-xs">{isMoreActive ? activeMoreTab?.label : "بیشتر"}</span>
-              </button>
-            )}
-          </div>
-        </nav>
 
         {/* More Sheet (admin only) */}
         <Modal open={moreOpen} onClose={() => setMoreOpen(false)} title="بخش‌های بیشتر">
