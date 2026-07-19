@@ -22,6 +22,8 @@ const EMPLOYEE_ALLOWED: { method: string; pattern: RegExp }[] = [
   { method: "POST", pattern: /^\/api\/invoices$/ },
   { method: "PATCH", pattern: /^\/api\/invoices\/\d+$/ },
   { method: "DELETE", pattern: /^\/api\/invoices\/\d+$/ },
+  { method: "POST", pattern: /^\/api\/invoices\/\d+\/items$/ },
+  { method: "DELETE", pattern: /^\/api\/invoices\/\d+\/items$/ },
   { method: "GET", pattern: /^\/api\/debtors$/ },
   { method: "POST", pattern: /^\/api\/debtors$/ },
   { method: "POST", pattern: /^\/api\/debtors\/\d+$/ },
