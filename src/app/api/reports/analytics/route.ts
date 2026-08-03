@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { invoices, invoiceItems } from "@/db/schema";
+import { invoices, invoiceItems, invoiceShares } from "@/db/schema";
 import { gte, lt, and, inArray } from "drizzle-orm";
 import { toJalaali } from "@/lib/jalaali";
+import { invoiceRatios, type ShareLite } from "@/lib/invoiceRevenue";
 
 function getTehranHour(date: Date): number {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -72,6 +73,20 @@ export async function GET(req: NextRequest) {
         .where(and(gte(invoices.issuedAt, prevCutoff), lt(invoices.issuedAt, cutoff))),
     ]);
 
+    // برای فاکتورهای تقسیم‌شده، سهم‌هاشون رو هم می‌گیریم تا وضعیت واقعی پرداخت هر بخش معلوم بشه
+    const splitInvoiceIds = [...recentInvoices, ...previousInvoices]
+      .filter((i) => i.isSplit)
+      .map((i) => i.id);
+    const allShares = splitInvoiceIds.length
+      ? await db.select().from(invoiceShares).where(inArray(invoiceShares.invoiceId, splitInvoiceIds))
+      : [];
+    const sharesByInvoice = new Map<number, ShareLite[]>();
+    for (const sh of allShares) {
+      const list = sharesByInvoice.get(sh.invoiceId) || [];
+      list.push({ status: sh.status, amount: sh.amount });
+      sharesByInvoice.set(sh.invoiceId, list);
+    }
+
     const dayLabels: string[] = [];
     const dayWeekdayIdx: number[] = [];
     for (let i = range - 1; i >= 0; i--) {
@@ -82,26 +97,36 @@ export async function GET(req: NextRequest) {
     const tableRevByDay = new Map<string, number>();
     const cafeRevByDay = new Map<string, number>();
     const countByDay = new Map<string, number>();
+    const debtByDay = new Map<string, number>();
+    const pendingByDay = new Map<string, number>();
     for (const label of dayLabels) {
       tableRevByDay.set(label, 0);
       cafeRevByDay.set(label, 0);
       countByDay.set(label, 0);
+      debtByDay.set(label, 0);
+      pendingByDay.set(label, 0);
     }
     for (const inv of recentInvoices) {
       if (inv.jalaaliDate && tableRevByDay.has(inv.jalaaliDate)) {
-        tableRevByDay.set(inv.jalaaliDate, (tableRevByDay.get(inv.jalaaliDate) || 0) + Number(inv.gamePrice || 0));
-        cafeRevByDay.set(inv.jalaaliDate, (cafeRevByDay.get(inv.jalaaliDate) || 0) + Number(inv.cafeTotal || 0));
+        const { paid, debt, pending } = invoiceRatios(inv, sharesByInvoice, inv.id);
+        // فقط سهمِ واقعاً «پرداخت‌شده» جزو درآمد حساب می‌شه؛ بدهی و در انتظار جدا نگه داشته می‌شن
+        tableRevByDay.set(inv.jalaaliDate, (tableRevByDay.get(inv.jalaaliDate) || 0) + Number(inv.gamePrice || 0) * paid);
+        cafeRevByDay.set(inv.jalaaliDate, (cafeRevByDay.get(inv.jalaaliDate) || 0) + Number(inv.cafeTotal || 0) * paid);
+        debtByDay.set(inv.jalaaliDate, (debtByDay.get(inv.jalaaliDate) || 0) + Number(inv.totalAmount) * debt);
+        pendingByDay.set(inv.jalaaliDate, (pendingByDay.get(inv.jalaaliDate) || 0) + Number(inv.totalAmount) * pending);
         countByDay.set(inv.jalaaliDate, (countByDay.get(inv.jalaaliDate) || 0) + 1);
       }
     }
     const daily = dayLabels.map((label, idx) => {
-      const tableRevenue = tableRevByDay.get(label) || 0;
-      const cafeRevenue = cafeRevByDay.get(label) || 0;
+      const tableRevenue = Math.round(tableRevByDay.get(label) || 0);
+      const cafeRevenue = Math.round(cafeRevByDay.get(label) || 0);
       return {
         date: label,
         tableRevenue,
         cafeRevenue,
         revenue: tableRevenue + cafeRevenue,
+        debtCreated: Math.round(debtByDay.get(label) || 0),
+        pendingAmount: Math.round(pendingByDay.get(label) || 0),
         count: countByDay.get(label) || 0,
         weekday: WEEKDAY_SHORT[dayWeekdayIdx[idx]],
         isWeekend: dayWeekdayIdx[idx] === 6,
@@ -111,11 +136,16 @@ export async function GET(req: NextRequest) {
     const totalRevenue = daily.reduce((s, d) => s + d.revenue, 0);
     const totalTableRevenue = daily.reduce((s, d) => s + d.tableRevenue, 0);
     const totalCafeRevenue = daily.reduce((s, d) => s + d.cafeRevenue, 0);
+    const totalDebtCreated = daily.reduce((s, d) => s + d.debtCreated, 0);
+    const totalPendingAmount = daily.reduce((s, d) => s + d.pendingAmount, 0);
     const totalInvoices = daily.reduce((s, d) => s + d.count, 0);
     const avgDailyRevenue = daily.length > 0 ? Math.round(totalRevenue / daily.length) : 0;
     const bestDay = daily.reduce((best, d) => (d.revenue > best.revenue ? d : best), daily[0] || { date: "", revenue: 0 });
 
-    const previousTotalRevenue = previousInvoices.reduce((s, inv) => s + Number(inv.totalAmount), 0);
+    const previousTotalRevenue = previousInvoices.reduce((s, inv) => {
+      const { paid } = invoiceRatios(inv, sharesByInvoice, inv.id);
+      return s + Number(inv.totalAmount) * paid;
+    }, 0);
     const changePercent =
       previousTotalRevenue > 0
         ? Math.round(((totalRevenue - previousTotalRevenue) / previousTotalRevenue) * 100)
@@ -162,6 +192,8 @@ export async function GET(req: NextRequest) {
       totalRevenue,
       totalTableRevenue,
       totalCafeRevenue,
+      totalDebtCreated,
+      totalPendingAmount,
       totalInvoices,
       avgDailyRevenue,
       bestDay,
