@@ -1,238 +1,151 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { invoices, invoiceItems, sessions, tables, debtors, debts, cafeMenu } from "@/db/schema";
-import { eq, desc, like, and, gte, lte, inArray } from "drizzle-orm";
-import { toJalaali, generateInvoiceNumber } from "@/lib/jalaali";
-import { verifySessionToken } from "@/lib/auth";
+import { invoices, invoiceItems, debts, debtors, invoiceShares } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
-export async function GET(req: NextRequest) {
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const { searchParams } = new URL(req.url);
-    const status = searchParams.get("status");
-    const search = searchParams.get("search");
-    const date = searchParams.get("date");
-    const tableType = searchParams.get("tableType");
-    const paymentMethod = searchParams.get("paymentMethod");
-    const days = searchParams.get("days");
-    const limit = parseInt(searchParams.get("limit") || "200");
-    const offset = parseInt(searchParams.get("offset") || "0");
-
-    const conditions = [];
-    if (status) conditions.push(eq(invoices.status, status));
-    if (date) conditions.push(eq(invoices.jalaaliDate, date));
-    if (tableType) conditions.push(eq(invoices.tableType, tableType));
-    if (paymentMethod) conditions.push(eq(invoices.paymentMethod, paymentMethod));
-    if (days) {
-      const cutoff = new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000);
-      conditions.push(gte(invoices.issuedAt, cutoff));
-    }
-
-    const allInvoices = await db
-      .select()
-      .from(invoices)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(invoices.issuedAt))
-      .limit(limit)
-      .offset(offset);
-
-    // Filter by search client side for simplicity
-    const filtered = search
-      ? allInvoices.filter(
-          (inv) =>
-            inv.customerName?.includes(search) ||
-            inv.invoiceNumber.includes(search)
-        )
-      : allInvoices;
-
-    // Attach items
-    const withItems = await Promise.all(
-      filtered.map(async (inv) => {
-        const items = await db
-          .select()
-          .from(invoiceItems)
-          .where(eq(invoiceItems.invoiceId, inv.id));
-        return { ...inv, items };
-      })
-    );
-
-    return NextResponse.json(withItems);
+    const { id } = await params;
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.id, parseInt(id)));
+    if (!invoice) return NextResponse.json({ error: "فاکتور یافت نشد" }, { status: 404 });
+    const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+    const shares = invoice.isSplit
+      ? await db.select().from(invoiceShares).where(eq(invoiceShares.invoiceId, invoice.id))
+      : [];
+    return NextResponse.json({ ...invoice, items, shares });
   } catch (e) {
     console.error(e);
-    return NextResponse.json({ error: "خطا در دریافت فاکتورها" }, { status: 500 });
+    return NextResponse.json({ error: "خطا" }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
+    const { id } = await params;
+    const invoiceId = parseInt(id);
     const body = await req.json();
-    const {
-      sessionId,
-      tableId,
-      customerName,
-      customerPhone,
-      tableType,
-      tableName,
-      startTime,
-      endTime,
-      durationMinutes,
-      pricePerHour,
-      gamePrice,
-      cafeItems,
-      discountType,
-      discountValue,
-      paymentMethod,
-      status,
-      isPartial,
-      notes,
-    } = body;
+    const { status, settledAt, paymentMethod, debtorId, newDebtorName, newDebtorPhone, customerName, customerPhone } = body;
 
-    const cafeTotal = (cafeItems || []).reduce(
-      (sum: number, item: { totalPrice: number }) => sum + Number(item.totalPrice),
-      0
-    );
-    const subtotal = Number(gamePrice || 0) + cafeTotal;
+    const [existing] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
+    if (!existing) return NextResponse.json({ error: "فاکتور یافت نشد" }, { status: 404 });
 
-    let discountAmount = 0;
-    if (discountType === "percent") {
-      discountAmount = Math.round(subtotal * (Number(discountValue || 0) / 100));
-    } else if (discountType === "fixed") {
-      discountAmount = Number(discountValue || 0);
-    }
-    const totalAmount = Math.max(0, subtotal - discountAmount);
-
-    const invoiceNumber = generateInvoiceNumber();
-    const jalaaliDate = toJalaali(new Date());
-
-    const sessionToken = req.cookies.get("session")?.value;
-    const currentUser = sessionToken ? verifySessionToken(sessionToken) : null;
-
-    const [invoice] = await db
-      .insert(invoices)
-      .values({
-        invoiceNumber,
-        sessionId: sessionId || null,
-        tableId: tableId || null,
-        customerName: customerName || null,
-        customerPhone: customerPhone || null,
-        tableType: tableType || null,
-        tableName: tableName || null,
-        startTime: startTime ? new Date(startTime) : null,
-        endTime: endTime ? new Date(endTime) : null,
-        durationMinutes: durationMinutes || null,
-        pricePerHour: pricePerHour ? pricePerHour.toString() : null,
-        gamePrice: gamePrice.toString(),
-        cafeTotal: cafeTotal.toString(),
-        subtotal: subtotal.toString(),
-        discountType: discountType || null,
-        discountValue: discountValue ? discountValue.toString() : "0",
-        discountAmount: discountAmount.toString(),
-        totalAmount: totalAmount.toString(),
-        paymentMethod: paymentMethod || null,
-        status: status || "pending",
-        isPartial: isPartial || false,
-        notes: notes || null,
-        issuedByUsername: currentUser?.username || null,
-        jalaaliDate,
-        settledAt: status === "paid" ? new Date() : null,
-      })
-      .returning();
-
-    // Insert cafe items
-    if (cafeItems && cafeItems.length > 0) {
-      // آیتم‌های کافه ممکنه به یه cafeItemId قدیمی/حذف‌شده از منو اشاره کنن
-      // (مثلاً میز از قبل سفارش داشته و بعداً اون آیتم از منو حذف شده).
-      // چون cafe_item_id یه foreign key به cafe_menu هست، اگه شناسه معتبر نباشه
-      // کل فاکتور با خطا شکست می‌خوره. برای همین اول شناسه‌های معتبر رو چک می‌کنیم
-      // و برای هر آیتمی که دیگه تو منو نیست، فقط نام/قیمتش رو ثبت می‌کنیم (بدون لینک).
-      const requestedIds = [
-        ...new Set(
-          cafeItems
-            .map((item: { cafeItemId?: number }) => item.cafeItemId)
-            .filter((id: number | undefined): id is number => !!id)
-        ),
-      ];
-      const validIds = new Set(
-        requestedIds.length > 0
-          ? (
-              await db
-                .select({ id: cafeMenu.id })
-                .from(cafeMenu)
-                .where(inArray(cafeMenu.id, requestedIds as number[]))
-            ).map((r) => r.id)
-          : []
-      );
-
-      await db.insert(invoiceItems).values(
-        cafeItems.map((item: { cafeItemId?: number; name: string; quantity: number; unitPrice: number; totalPrice: number }) => ({
-          invoiceId: invoice.id,
-          cafeItemId: item.cafeItemId && validIds.has(item.cafeItemId) ? item.cafeItemId : null,
-          name: item.name,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice.toString(),
-          totalPrice: item.totalPrice.toString(),
-        }))
+    if (existing.isSplit && (status !== undefined || paymentMethod !== undefined)) {
+      return NextResponse.json(
+        { error: "این فاکتور تقسیم‌شده. برای تسویه هر سهم از مسیر مخصوص سهم‌ها استفاده کنید." },
+        { status: 400 }
       );
     }
 
-    // Handle debt transfer
-    if (paymentMethod === "debt" || status === "debt") {
-      let debtorId: number;
+    const updateData: Record<string, unknown> = {};
+    if (paymentMethod !== undefined) updateData.paymentMethod = paymentMethod;
+    if (status !== undefined) updateData.status = status;
+    if (settledAt !== undefined) updateData.settledAt = settledAt ? new Date(settledAt) : new Date();
+    if (customerName !== undefined) updateData.customerName = customerName || null;
+    if (customerPhone !== undefined) updateData.customerPhone = customerPhone || null;
 
-      if (body.debtorId) {
-        debtorId = body.debtorId;
-        // Update total debt
+    const wasDebt = existing.status === "debt";
+    const willBeDebt = paymentMethod === "debt";
+
+    if (paymentMethod !== undefined && willBeDebt && !wasDebt) {
+      // انتقال فاکتور به بدهکاری (مثلاً مشتری الان پول نداشته)
+      let finalDebtorId: number;
+      if (debtorId) {
+        finalDebtorId = debtorId;
         const [debtor] = await db.select().from(debtors).where(eq(debtors.id, debtorId));
         if (debtor) {
           await db
             .update(debtors)
-            .set({ totalDebt: (Number(debtor.totalDebt) + totalAmount).toString() })
+            .set({ totalDebt: (Number(debtor.totalDebt) + Number(existing.totalAmount)).toString() })
             .where(eq(debtors.id, debtorId));
         }
-            } else {
-        // Create new debtor
+      } else {
         const [newDebtor] = await db
           .insert(debtors)
           .values({
-            name: body.newDebtorName || customerName || "نامشخص",
-            phone: body.newDebtorPhone || customerPhone || null,
-            totalDebt: totalAmount.toString(),
+            name: newDebtorName || existing.customerName || "نامشخص",
+            phone: newDebtorPhone || existing.customerPhone || null,
+            totalDebt: existing.totalAmount,
           })
           .returning();
-        debtorId = newDebtor.id;
+        finalDebtorId = newDebtor.id;
       }
-
-
       await db.insert(debts).values({
-        debtorId,
-        invoiceId: invoice.id,
-        invoiceNumber,
-        amount: totalAmount.toString(),
-        description: `فاکتور ${invoiceNumber} - ${tableName || ""} - ${jalaaliDate}`,
-        jalaaliDate,
+        debtorId: finalDebtorId,
+        invoiceId: existing.id,
+        invoiceNumber: existing.invoiceNumber,
+        amount: existing.totalAmount,
+        description: `فاکتور ${existing.invoiceNumber} - ${existing.tableName || ""} - ${existing.jalaaliDate}`,
+        jalaaliDate: existing.jalaaliDate,
         isPaid: false,
       });
-
-      // Update invoice status to debt
-      await db
-        .update(invoices)
-        .set({ status: "debt" })
-        .where(eq(invoices.id, invoice.id));
-    }
-
-    // If session is not partial and not kept open, close the session
-    if (sessionId && !isPartial) {
-      await db
-        .update(sessions)
-        .set({ status: "closed", endTime: endTime ? new Date(endTime) : new Date() })
-        .where(eq(sessions.id, sessionId));
-      if (tableId) {
-        await db.update(tables).set({ isActive: false }).where(eq(tables.id, tableId));
+      updateData.status = "debt";
+    } else if (paymentMethod !== undefined && !willBeDebt && wasDebt) {
+      // خروج از بدهکاری (مثلاً مشتری الان بدهیش رو پرداخت کرده)
+      const linkedDebts = await db.select().from(debts).where(eq(debts.invoiceId, existing.id));
+      for (const debt of linkedDebts) {
+        if (!debt.isPaid) {
+          const [debtor] = await db.select().from(debtors).where(eq(debtors.id, debt.debtorId));
+          if (debtor) {
+            const newTotal = Math.max(0, Number(debtor.totalDebt) - Number(debt.amount));
+            await db.update(debtors).set({ totalDebt: newTotal.toString() }).where(eq(debtors.id, debtor.id));
+          }
+        }
+        await db.update(debts).set({ isPaid: true, paidAt: new Date() }).where(eq(debts.id, debt.id));
       }
+      if (status === undefined) updateData.status = "paid";
     }
 
-    return NextResponse.json({ ...invoice, invoiceNumber });
+    if (updateData.status === "paid" && settledAt === undefined) updateData.settledAt = new Date();
+
+    const [invoice] = await db
+      .update(invoices)
+      .set(updateData)
+      .where(eq(invoices.id, invoiceId))
+      .returning();
+
+    return NextResponse.json(invoice);
   } catch (e) {
     console.error(e);
-    return NextResponse.json({ error: "خطا در صدور فاکتور" }, { status: 500 });
+    return NextResponse.json({ error: "خطا در ویرایش فاکتور" }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const invoiceId = parseInt(id);
+
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
+    if (!invoice) return NextResponse.json({ error: "فاکتور یافت نشد" }, { status: 404 });
+
+    const linkedDebts = await db.select().from(debts).where(eq(debts.invoiceId, invoiceId));
+    for (const debt of linkedDebts) {
+      if (!debt.isPaid) {
+        const [debtor] = await db.select().from(debtors).where(eq(debtors.id, debt.debtorId));
+        if (debtor) {
+          const newTotal = Math.max(0, Number(debtor.totalDebt) - Number(debt.amount));
+          await db.update(debtors).set({ totalDebt: newTotal.toString() }).where(eq(debtors.id, debtor.id));
+        }
+      }
+      await db.delete(debts).where(eq(debts.id, debt.id));
+    }
+
+    await db.delete(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
+    await db.delete(invoiceShares).where(eq(invoiceShares.invoiceId, invoiceId));
+    await db.delete(invoices).where(eq(invoices.id, invoiceId));
+
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    return NextResponse.json({ error: "خطا در حذف فاکتور" }, { status: 500 });
   }
 }
