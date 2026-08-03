@@ -74,8 +74,9 @@ export const invoices = pgTable("invoices", {
   discountAmount: numeric("discount_amount", { precision: 12, scale: 2 }).default("0"),
   totalAmount: numeric("total_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   paymentMethod: text("payment_method"), // 'cash' | 'card' | 'debt'
-  status: text("status").notNull().default("pending"), // 'paid' | 'debt' | 'pending'
+  status: text("status").notNull().default("pending"), // 'paid' | 'debt' | 'pending' | 'split'
   isPartial: boolean("is_partial").notNull().default(false),
+  isSplit: boolean("is_split").notNull().default(false),
   notes: text("notes"),
   issuedByUsername: text("issued_by_username"),
   issuedAt: timestamp("issued_at").notNull().defaultNow(),
@@ -118,11 +119,25 @@ export const debtors = pgTable("debtors", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// ─── Invoice Shares (سهم‌های تقسیم فاکتور) ────────────────────────────────────
+export const invoiceShares = pgTable("invoice_shares", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").notNull().references(() => invoices.id),
+  label: text("label").notNull(), // e.g. "نفر ۱" or a customer name
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  paymentMethod: text("payment_method"), // 'cash' | 'card' | 'debt' | null
+  status: text("status").notNull().default("pending"), // 'paid' | 'debt' | 'pending'
+  debtorId: integer("debtor_id").references(() => debtors.id),
+  settledAt: timestamp("settled_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // ─── Debts (ردیف‌های بدهی) ────────────────────────────────────────────────────
 export const debts = pgTable("debts", {
   id: serial("id").primaryKey(),
   debtorId: integer("debtor_id").notNull().references(() => debtors.id),
   invoiceId: integer("invoice_id").references(() => invoices.id),
+  shareId: integer("share_id").references(() => invoiceShares.id), // اگه این بدهی از یک سهمِ فاکتور تقسیم‌شده اومده باشه
   invoiceNumber: text("invoice_number"),
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
   description: text("description"),
