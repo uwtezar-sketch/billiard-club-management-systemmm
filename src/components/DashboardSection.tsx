@@ -24,6 +24,8 @@ interface Invoice {
   tableType: string | null;
   totalAmount: string;
   status: string;
+  isSplit: boolean;
+  shares: { id: number; label: string; amount: string; status: string }[];
   issuedAt: string;
 }
 
@@ -32,6 +34,8 @@ interface DailyPoint {
   tableRevenue: number;
   cafeRevenue: number;
   revenue: number;
+  debtCreated: number;
+  pendingAmount: number;
   count: number;
   weekday: string;
   isWeekend: boolean;
@@ -54,6 +58,8 @@ interface Analytics {
   totalRevenue: number;
   totalTableRevenue: number;
   totalCafeRevenue: number;
+  totalDebtCreated: number;
+  totalPendingAmount: number;
   totalInvoices: number;
   avgDailyRevenue: number;
   bestDay: DailyPoint;
@@ -187,9 +193,9 @@ export default function DashboardSection() {
         {analytics && analytics.daily.length > 0 ? (
           <>
             {/* Summary stats */}
-            <div className="grid grid-cols-3 gap-2 mb-3">
+            <div className="grid grid-cols-3 gap-2 mb-2">
               <div className="bg-slate-800 rounded-lg p-2 text-center">
-                <div className="text-[10px] text-slate-500">مجموع فروش</div>
+                <div className="text-[10px] text-slate-500">درآمد نقدی واقعی</div>
                 <div className="text-sm font-bold text-green-400 mt-1">{formatPrice(analytics.totalRevenue)}</div>
               </div>
               <div className="bg-slate-800 rounded-lg p-2 text-center">
@@ -206,6 +212,18 @@ export default function DashboardSection() {
                   {analytics.changePercent > 0 ? "▲" : analytics.changePercent < 0 ? "▼" : "•"}{" "}
                   {Math.abs(analytics.changePercent).toLocaleString("fa-IR")}٪
                 </div>
+              </div>
+            </div>
+
+            {/* بدهی و در انتظار — جدا از درآمد واقعی */}
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <div className="rounded-lg p-2 text-center" style={{ background: "#3d101633", border: "1px solid #8f1d2c" }}>
+                <div className="text-[10px] text-red-300">بدهیِ جدید این بازه</div>
+                <div className="text-sm font-bold mt-1" style={{ color: "#f27f8a" }}>{formatPrice(analytics.totalDebtCreated)}</div>
+              </div>
+              <div className="rounded-lg p-2 text-center" style={{ background: "#3d2c0f33", border: "1px solid #8f6f1d" }}>
+                <div className="text-[10px] text-yellow-300">در انتظار تسویه این بازه</div>
+                <div className="text-sm font-bold text-yellow-400 mt-1">{formatPrice(analytics.totalPendingAmount)}</div>
               </div>
             </div>
 
@@ -256,7 +274,13 @@ export default function DashboardSection() {
                 <div className="font-bold text-white mb-1">{selectedDay.date} ({selectedDay.weekday})</div>
                 <div className="flex justify-between text-slate-300"><span>💵 درآمد میز:</span><span>{formatPrice(selectedDay.tableRevenue)}</span></div>
                 <div className="flex justify-between text-slate-300"><span>☕ درآمد کافه:</span><span>{formatPrice(selectedDay.cafeRevenue)}</span></div>
-                <div className="flex justify-between text-white font-bold"><span>جمع:</span><span>{formatPrice(selectedDay.revenue)}</span></div>
+                <div className="flex justify-between text-white font-bold"><span>جمع درآمد واقعی:</span><span>{formatPrice(selectedDay.revenue)}</span></div>
+                {selectedDay.debtCreated > 0 && (
+                  <div className="flex justify-between mt-1" style={{ color: "#f27f8a" }}><span>📋 بدهی جدید:</span><span>{formatPrice(selectedDay.debtCreated)}</span></div>
+                )}
+                {selectedDay.pendingAmount > 0 && (
+                  <div className="flex justify-between text-yellow-400"><span>⏳ در انتظار:</span><span>{formatPrice(selectedDay.pendingAmount)}</span></div>
+                )}
                 <div className="flex justify-between text-slate-400 text-xs mt-1"><span>تعداد فاکتور:</span><span>{selectedDay.count.toLocaleString("fa-IR")}</span></div>
               </div>
             )}
@@ -502,15 +526,21 @@ export default function DashboardSection() {
         <div className="card">
           <h3 className="font-bold text-yellow-400 mb-3">⏳ در انتظار تسویه</h3>
           <div className="space-y-2">
-            {pendingInvoices.map((inv) => (
-              <div key={inv.id} className="bg-yellow-950/30 border border-yellow-800 rounded-lg px-3 py-2 flex justify-between items-center">
-                <div>
-                  <span className="text-white text-sm">{inv.customerName || "بدون نام"}</span>
-                  {inv.tableName && <span className="text-slate-400 text-xs mr-2">{inv.tableName}</span>}
+            {pendingInvoices.map((inv) => {
+              const pendingAmount = inv.isSplit
+                ? inv.shares.filter((s) => s.status === "pending").reduce((s, sh) => s + Number(sh.amount), 0)
+                : Number(inv.totalAmount);
+              return (
+                <div key={inv.id} className="bg-yellow-950/30 border border-yellow-800 rounded-lg px-3 py-2 flex justify-between items-center">
+                  <div>
+                    <span className="text-white text-sm">{inv.customerName || "بدون نام"}</span>
+                    {inv.tableName && <span className="text-slate-400 text-xs mr-2">{inv.tableName}</span>}
+                    {inv.isSplit && <span className="text-yellow-500 text-xs mr-2">(تقسیم‌شده)</span>}
+                  </div>
+                  <span className="text-yellow-400 font-bold text-sm">{formatPrice(pendingAmount)}</span>
                 </div>
-                <span className="text-yellow-400 font-bold text-sm">{formatPrice(Number(inv.totalAmount))}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
