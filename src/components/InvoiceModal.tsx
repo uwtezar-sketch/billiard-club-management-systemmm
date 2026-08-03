@@ -43,6 +43,17 @@ interface Debtor {
   phone: string | null;
 }
 
+interface ShareForm {
+  key: string;
+  label: string;
+  amount: string; // متن، برای راحتی ویرایش دستی
+  status: "paid" | "debt" | "pending";
+  paymentMethod: "cash" | "card" | null; // فقط وقتی status='paid'
+  debtorId: number | null;
+  newDebtorName: string;
+  newDebtorPhone: string;
+}
+
 interface InvoiceModalProps {
   open: boolean;
   session: Session;
@@ -84,11 +95,61 @@ export default function InvoiceModal({
   const [newDebtorPhone, setNewDebtorPhone] = useState(session.customerPhone || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ── تقسیم فاکتور بین چند نفر ──────────────────────────────────────────
+  const [isSplitMode, setIsSplitMode] = useState(false);
+  const [shares, setShares] = useState<ShareForm[]>([]);
+
+  function makeShare(label: string, amount: number): ShareForm {
+    return {
+      key: Math.random().toString(36).slice(2),
+      label,
+      amount: String(amount),
+      status: "pending",
+      paymentMethod: "cash",
+      debtorId: null,
+      newDebtorName: "",
+      newDebtorPhone: "",
+    };
+  }
+
+  function enableSplitMode() {
+    setIsSplitMode(true);
+    const half1 = Math.round(totalAmount / 2);
+    const half2 = totalAmount - half1;
+    setShares([makeShare("نفر ۱", half1), makeShare("نفر ۲", half2)]);
+  }
+
+  function disableSplitMode() {
+    setIsSplitMode(false);
+    setShares([]);
+  }
+
+  function addShare() {
+    setShares((prev) => [...prev, makeShare(`نفر ${prev.length + 1}`, 0)]);
+  }
+
+  function removeShare(key: string) {
+    setShares((prev) => prev.filter((s) => s.key !== key));
+  }
+
+  function updateShare(key: string, patch: Partial<ShareForm>) {
+    setShares((prev) => prev.map((s) => (s.key === key ? { ...s, ...patch } : s)));
+  }
+
+  function splitEqually() {
+    setShares((prev) => {
+      if (prev.length === 0) return prev;
+      const base = Math.floor(totalAmount / prev.length);
+      const remainder = totalAmount - base * prev.length;
+      return prev.map((s, i) => ({ ...s, amount: String(base + (i === prev.length - 1 ? remainder : 0)) }));
+    });
+  }
+
   useEffect(() => {
-    if (paymentMethod === "debt") {
+    if (paymentMethod === "debt" || isSplitMode) {
       fetch("/api/debtors").then((r) => r.json()).then((d) => setDebtors(Array.isArray(d) ? d : []));
     }
-  }, [paymentMethod]);
+  }, [paymentMethod, isSplitMode]);
 
   const actualEnd = new Date();
   if (endTime) {
@@ -104,6 +165,8 @@ export default function InvoiceModal({
   if (discountType === "percent") discountAmount = Math.round(subtotal * (Number(discountValue || 0) / 100));
   if (discountType === "fixed") discountAmount = Number(discountValue || 0);
   const totalAmount = Math.max(0, subtotal - discountAmount);
+  const sharesSum = shares.reduce((s, sh) => s + (Number(sh.amount) || 0), 0);
+  const sharesMismatch = isSplitMode && sharesSum !== totalAmount;
 
   function addMenuItemToInvoice(item: CafeMenuItem) {
     const existing = selectedCafeItems.find((o) => o.name === item.name && !o.id);
@@ -137,6 +200,22 @@ export default function InvoiceModal({
 
   async function handleSubmit() {
     if (isSubmitting) return;
+    if (isSplitMode) {
+      if (shares.length < 2) {
+        showToast("برای تقسیم فاکتور حداقل به ۲ سهم نیاز است", "error");
+        return;
+      }
+      if (sharesMismatch) {
+        showToast("جمع سهم‌ها با مبلغ نهایی فاکتور برابر نیست", "error");
+        return;
+      }
+      for (const s of shares) {
+        if (s.status === "debt" && !s.debtorId && !s.newDebtorName.trim()) {
+          showToast(`برای سهم «${s.label}» باید بدهکار مشخص شود`, "error");
+          return;
+        }
+      }
+    }
     setIsSubmitting(true);
 
     try {
@@ -161,17 +240,29 @@ export default function InvoiceModal({
         })),
         discountType: discountType === "none" ? null : discountType,
         discountValue: discountType !== "none" ? Number(discountValue || 0) : 0,
-        paymentMethod,
-        status: paymentMethod === "debt" ? "debt" : invoiceStatus,
         isPartial,
         notes,
       };
 
-      if (paymentMethod === "debt") {
-        body.debtorId = selectedDebtorId || null;
-        if (!selectedDebtorId) {
-          body.newDebtorName = newDebtorName || customerName || "نامشخص";
-          body.newDebtorPhone = newDebtorPhone || customerPhone || null;
+      if (isSplitMode) {
+        body.shares = shares.map((s) => ({
+          label: s.label || "بدون‌نام",
+          amount: Number(s.amount) || 0,
+          status: s.status,
+          paymentMethod: s.status === "paid" ? s.paymentMethod || "cash" : s.status === "debt" ? "debt" : null,
+          debtorId: s.status === "debt" ? s.debtorId || undefined : undefined,
+          newDebtorName: s.status === "debt" && !s.debtorId ? s.newDebtorName || "نامشخص" : undefined,
+          newDebtorPhone: s.status === "debt" && !s.debtorId ? s.newDebtorPhone || undefined : undefined,
+        }));
+      } else {
+        body.paymentMethod = paymentMethod;
+        body.status = paymentMethod === "debt" ? "debt" : invoiceStatus;
+        if (paymentMethod === "debt") {
+          body.debtorId = selectedDebtorId || null;
+          if (!selectedDebtorId) {
+            body.newDebtorName = newDebtorName || customerName || "نامشخص";
+            body.newDebtorPhone = newDebtorPhone || customerPhone || null;
+          }
         }
       }
 
@@ -289,79 +380,191 @@ export default function InvoiceModal({
           )}
         </div>
 
-        {/* Payment Method */}
+        {/* Split toggle */}
         <div>
-          <label className="block text-sm text-slate-400 mb-2">روش پرداخت</label>
-          <div className="grid grid-cols-3 gap-2">
-            {(["cash", "card", "debt"] as const).map((m) => (
-              <button
-                key={m}
-                className={`btn btn-sm ${paymentMethod === m ? "btn-primary" : "btn-secondary"}`}
-                onClick={() => {
-                  setPaymentMethod(m);
-                  if (m === "debt") setInvoiceStatus("debt");
-                  else setInvoiceStatus("paid");
-                }}
-              >
-                {m === "cash" ? "💵 نقدی" : m === "card" ? "💳 کارت" : "📋 بدهکاری"}
-              </button>
-            ))}
-          </div>
+          <button
+            className={`btn btn-sm w-full ${isSplitMode ? "btn-primary" : "btn-secondary"}`}
+            onClick={() => (isSplitMode ? disableSplitMode() : enableSplitMode())}
+          >
+            {isSplitMode ? "✕ لغو تقسیم فاکتور" : "➗ تقسیم فاکتور بین چند نفر"}
+          </button>
         </div>
 
-        {/* Debt Options */}
-        {paymentMethod === "debt" && (
-          <div className="card bg-red-950/30 border-red-800">
-            <h3 className="text-sm font-bold text-red-400 mb-2">انتقال به حساب بدهکاری</h3>
-            <div className="space-y-2">
-              <select
-                className="form-input"
-                value={selectedDebtorId || ""}
-                onChange={(e) => setSelectedDebtorId(e.target.value ? Number(e.target.value) : null)}
-              >
-                <option value="">مشتری جدید...</option>
-                {debtors.map((d) => (
-                  <option key={d.id} value={d.id}>{d.name} {d.phone ? `(${d.phone})` : ""}</option>
-                ))}
-              </select>
-              {!selectedDebtorId && (
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    className="form-input"
-                    placeholder="نام مشتری..."
-                    value={newDebtorName}
-                    onChange={(e) => setNewDebtorName(e.target.value)}
-                  />
-                  <input
-                    className="form-input"
-                    placeholder="شماره تلفن..."
-                    value={newDebtorPhone}
-                    onChange={(e) => setNewDebtorPhone(e.target.value)}
-                    type="tel"
-                    dir="ltr"
-                  />
-                </div>
-              )}
+        {isSplitMode ? (
+          <div className="card space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-300">سهم‌های فاکتور</h3>
+              <div className="flex gap-2">
+                <button className="btn btn-xs btn-secondary" onClick={splitEqually}>تقسیم مساوی</button>
+                <button className="btn btn-xs btn-secondary" onClick={addShare}>+ افزودن نفر</button>
+              </div>
             </div>
-          </div>
-        )}
 
-        {/* Status for non-debt */}
-        {paymentMethod !== "debt" && (
-          <div>
-            <label className="block text-sm text-slate-400 mb-2">وضعیت تسویه</label>
-            <div className="grid grid-cols-3 gap-2">
-              {(["paid", "pending"] as const).map((s) => (
-                <button
-                  key={s}
-                  className={`btn btn-sm ${invoiceStatus === s ? "btn-primary" : "btn-secondary"}`}
-                  onClick={() => setInvoiceStatus(s)}
-                >
-                  {s === "paid" ? "✅ تسویه شده" : "⏳ در انتظار"}
-                </button>
-              ))}
+            {shares.map((s) => (
+              <div key={s.key} className="bg-slate-800 rounded-lg p-3 space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    className="form-input flex-1"
+                    placeholder="نام/برچسب"
+                    value={s.label}
+                    onChange={(e) => updateShare(s.key, { label: e.target.value })}
+                  />
+                  <input
+                    className="form-input w-32"
+                    type="number"
+                    dir="ltr"
+                    placeholder="مبلغ"
+                    value={s.amount}
+                    onChange={(e) => updateShare(s.key, { amount: e.target.value })}
+                  />
+                  {shares.length > 2 && (
+                    <button className="text-red-400 text-xs px-2" onClick={() => removeShare(s.key)}>✕</button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-4 gap-1">
+                  {(["paid", "debt", "pending"] as const).map((st) => (
+                    <button
+                      key={st}
+                      className={`btn btn-xs col-span-1 ${s.status === st ? "btn-primary" : "btn-secondary"}`}
+                      onClick={() => updateShare(s.key, { status: st })}
+                    >
+                      {st === "paid" ? "✅ تسویه" : st === "debt" ? "📋 بدهی" : "⏳ انتظار"}
+                    </button>
+                  ))}
+                </div>
+
+                {s.status === "paid" && (
+                  <div className="flex gap-2">
+                    {(["cash", "card"] as const).map((m) => (
+                      <button
+                        key={m}
+                        className={`btn btn-xs flex-1 ${s.paymentMethod === m ? "btn-primary" : "btn-secondary"}`}
+                        onClick={() => updateShare(s.key, { paymentMethod: m })}
+                      >
+                        {m === "cash" ? "💵 نقدی" : "💳 کارت"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {s.status === "debt" && (
+                  <div className="space-y-2">
+                    <select
+                      className="form-input"
+                      value={s.debtorId || ""}
+                      onChange={(e) => updateShare(s.key, { debtorId: e.target.value ? Number(e.target.value) : null })}
+                    >
+                      <option value="">مشتری جدید...</option>
+                      {debtors.map((d) => (
+                        <option key={d.id} value={d.id}>{d.name} {d.phone ? `(${d.phone})` : ""}</option>
+                      ))}
+                    </select>
+                    {!s.debtorId && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          className="form-input"
+                          placeholder="نام مشتری..."
+                          value={s.newDebtorName}
+                          onChange={(e) => updateShare(s.key, { newDebtorName: e.target.value })}
+                        />
+                        <input
+                          className="form-input"
+                          placeholder="شماره تلفن..."
+                          value={s.newDebtorPhone}
+                          onChange={(e) => updateShare(s.key, { newDebtorPhone: e.target.value })}
+                          type="tel"
+                          dir="ltr"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div className={`text-sm text-left ${sharesMismatch ? "text-red-400" : "text-green-400"}`} dir="ltr">
+              {formatPrice(sharesSum)} / {formatPrice(totalAmount)}
+              {sharesMismatch && "  ⚠️ جمع سهم‌ها با مبلغ فاکتور برابر نیست"}
             </div>
           </div>
+        ) : (
+          <>
+            {/* Payment Method */}
+            <div>
+              <label className="block text-sm text-slate-400 mb-2">روش پرداخت</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(["cash", "card", "debt"] as const).map((m) => (
+                  <button
+                    key={m}
+                    className={`btn btn-sm ${paymentMethod === m ? "btn-primary" : "btn-secondary"}`}
+                    onClick={() => {
+                      setPaymentMethod(m);
+                      if (m === "debt") setInvoiceStatus("debt");
+                      else setInvoiceStatus("paid");
+                    }}
+                  >
+                    {m === "cash" ? "💵 نقدی" : m === "card" ? "💳 کارت" : "📋 بدهکاری"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Debt Options */}
+            {paymentMethod === "debt" && (
+              <div className="card bg-red-950/30 border-red-800">
+                <h3 className="text-sm font-bold text-red-400 mb-2">انتقال به حساب بدهکاری</h3>
+                <div className="space-y-2">
+                  <select
+                    className="form-input"
+                    value={selectedDebtorId || ""}
+                    onChange={(e) => setSelectedDebtorId(e.target.value ? Number(e.target.value) : null)}
+                  >
+                    <option value="">مشتری جدید...</option>
+                    {debtors.map((d) => (
+                      <option key={d.id} value={d.id}>{d.name} {d.phone ? `(${d.phone})` : ""}</option>
+                    ))}
+                  </select>
+                  {!selectedDebtorId && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        className="form-input"
+                        placeholder="نام مشتری..."
+                        value={newDebtorName}
+                        onChange={(e) => setNewDebtorName(e.target.value)}
+                      />
+                      <input
+                        className="form-input"
+                        placeholder="شماره تلفن..."
+                        value={newDebtorPhone}
+                        onChange={(e) => setNewDebtorPhone(e.target.value)}
+                        type="tel"
+                        dir="ltr"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Status for non-debt */}
+            {paymentMethod !== "debt" && (
+              <div>
+                <label className="block text-sm text-slate-400 mb-2">وضعیت تسویه</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["paid", "pending"] as const).map((s) => (
+                    <button
+                      key={s}
+                      className={`btn btn-sm ${invoiceStatus === s ? "btn-primary" : "btn-secondary"}`}
+                      onClick={() => setInvoiceStatus(s)}
+                    >
+                      {s === "paid" ? "✅ تسویه شده" : "⏳ در انتظار"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* Notes */}
@@ -400,7 +603,7 @@ export default function InvoiceModal({
           <button
             className="btn btn-success flex-1 btn-lg"
             onClick={handleSubmit}
-            disabled={isSubmitting}
+            disabled={isSubmitting || sharesMismatch}
           >
             {isSubmitting ? "در حال صدور..." : "✅ صدور فاکتور"}
           </button>
