@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
       const daysSinceVisit = lastVisit ? Math.floor((Date.now() - new Date(lastVisit).getTime()) / 86400000) : null;
 
       // بدهی فعلاً بازِ این مشتری (از جدول بدهکاران، که با تسویه‌شدن به‌روز می‌مونه)
-      const matchingDebtor = allDebtors.find((d) => isSamePerson(person, { phone: d.phone, name: d.name }));
+      const matchingDebtor = allDebtors.find((d) => d.customerId === c.id) || allDebtors.find((d) => isSamePerson(person, { phone: d.phone, name: d.name }));
       const outstandingDebt = matchingDebtor ? Number(matchingDebtor.totalDebt) : 0;
 
       return {

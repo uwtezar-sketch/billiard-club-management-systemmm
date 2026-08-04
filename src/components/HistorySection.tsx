@@ -4,6 +4,7 @@ import Modal from "./Modal";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./Toast";
 import { formatPrice, formatDuration } from "@/lib/jalaali";
+import CustomerNameAutocomplete from "./CustomerNameAutocomplete";
 
 interface InvoiceItem {
   id: number;
@@ -112,12 +113,6 @@ export default function HistorySection() {
       .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { name: string; phone: string }) => ({ name: c.name, phone: c.phone })) : []))
       .catch(() => {});
   }, []);
-
-  function findCustomerByName(name: string) {
-    const n = name.trim().toLowerCase();
-    if (!n) return undefined;
-    return customerDirectory.find((c) => c.name.trim().toLowerCase() === n);
-  }
   const [editDebtorId, setEditDebtorId] = useState<number | "">("");
   const [editNewDebtorName, setEditNewDebtorName] = useState("");
   const [editNewDebtorPhone, setEditNewDebtorPhone] = useState("");
@@ -808,16 +803,13 @@ export default function HistorySection() {
                       <div className="flex gap-2 items-end">
                         <div className="flex-1">
                           <label className="block text-[10px] text-slate-500 mb-1">نام مشتری</label>
-                          <input
-                            className="form-input"
+                          <CustomerNameAutocomplete
                             value={nameEdit.label}
-                            list="hs-customer-names"
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              const match = findCustomerByName(val);
+                            directory={customerDirectory}
+                            onChange={(name, phone) => {
                               setShareNameEdits((p) => ({
                                 ...p,
-                                [sh.id]: { label: val, phone: match && !nameEdit.phone ? match.phone : nameEdit.phone },
+                                [sh.id]: { label: name, phone: phone && !nameEdit.phone ? phone : nameEdit.phone },
                               }));
                             }}
                           />
@@ -1012,16 +1004,13 @@ export default function HistorySection() {
                   </select>
                   {!editDebtorId && (
                     <>
-                      <input
-                        className="form-input"
-                        placeholder="نام بدهکار جدید"
+                      <CustomerNameAutocomplete
                         value={editNewDebtorName}
-                        list="hs-customer-names"
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setEditNewDebtorName(val);
-                          const match = findCustomerByName(val);
-                          if (match && !editNewDebtorPhone) setEditNewDebtorPhone(match.phone);
+                        directory={customerDirectory}
+                        placeholder="نام بدهکار جدید"
+                        onChange={(name, phone) => {
+                          setEditNewDebtorName(name);
+                          if (phone && !editNewDebtorPhone) setEditNewDebtorPhone(phone);
                         }}
                       />
                       <input
@@ -1035,11 +1024,6 @@ export default function HistorySection() {
                   )}
                 </div>
               )}
-              <datalist id="hs-customer-names">
-                {customerDirectory.map((c) => (
-                  <option key={c.phone} value={c.name} />
-                ))}
-              </datalist>
 
               {editMethod === "debt" && selectedInvoice.status === "debt" && (
                 <div className="text-xs" style={{ color: "#e0b23a" }}>این فاکتور همین الان هم روی بدهکاری ثبت شده.</div>

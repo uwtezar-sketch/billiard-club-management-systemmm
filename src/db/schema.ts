@@ -116,6 +116,7 @@ export const debtors = pgTable("debtors", {
   phone: varchar("phone", { length: 20 }),
   notes: text("notes"),
   totalDebt: numeric("total_debt", { precision: 12, scale: 2 }).notNull().default("0"),
+  customerId: integer("customer_id").references(() => customers.id), // اگه این بدهکار به یک رکورد باشگاه مشتریان وصل/ادغام شده باشه
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { debtors, debts } from "@/db/schema";
+import { debtors, debts, customers } from "@/db/schema";
 import { eq, like, desc } from "drizzle-orm";
+import { isSamePerson } from "@/lib/personMatch";
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,6 +10,8 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get("search");
 
     const allDebtors = await db.select().from(debtors).orderBy(desc(debtors.createdAt));
+    const allCustomers = await db.select().from(customers);
+    const customerById = new Map(allCustomers.map((c) => [c.id, c]));
 
     const filtered = search
       ? allDebtors.filter(
@@ -23,7 +26,8 @@ export async function GET(req: NextRequest) {
           .from(debts)
           .where(eq(debts.debtorId, debtor.id))
           .orderBy(desc(debts.createdAt));
-        return { ...debtor, debts: debtRows };
+        const linkedCustomer = debtor.customerId ? customerById.get(debtor.customerId) : null;
+        return { ...debtor, debts: debtRows, customerName: linkedCustomer?.name || null };
       })
     );
 
@@ -37,12 +41,34 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, phone, notes } = body;
+    const { name, phone, notes, force } = body;
     if (!name) return NextResponse.json({ error: "نام الزامی است" }, { status: 400 });
+
+    const allCustomers = await db.select().from(customers);
+    const matchedCustomer = allCustomers.find((c) => isSamePerson({ phone, name }, { phone: c.phone, name: c.name }));
+
+    if (matchedCustomer && !force) {
+      const allDebtors = await db.select().from(debtors);
+      const linkedDebtor = allDebtors.find((d) => d.customerId === matchedCustomer.id);
+      if (linkedDebtor) {
+        return NextResponse.json(
+          {
+            error: `یک بدهکار به نام «${linkedDebtor.name}» همین الان به مشتری «${matchedCustomer.name}» وصله. به‌جای ساختن رکورد تکراری، از همون استفاده کن.`,
+            existingDebtorId: linkedDebtor.id,
+          },
+          { status: 409 }
+        );
+      }
+    }
 
     const [debtor] = await db
       .insert(debtors)
-      .values({ name, phone: phone || null, notes: notes || null })
+      .values({
+        name,
+        phone: phone || null,
+        notes: notes || null,
+        customerId: matchedCustomer?.id || null,
+      })
       .returning();
 
     return NextResponse.json(debtor);

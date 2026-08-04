@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import Modal from "./Modal";
 import { formatDuration, calcPrice, formatPrice, toJalaali } from "@/lib/jalaali";
 import { useToast } from "./Toast";
+import CustomerNameAutocomplete from "./CustomerNameAutocomplete";
 
 interface Session {
   id: number;
@@ -99,12 +100,6 @@ export default function InvoiceModal({
       .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { name: string; phone: string }) => ({ name: c.name, phone: c.phone })) : []))
       .catch(() => {});
   }, []);
-
-  function findCustomerByName(name: string) {
-    const n = name.trim().toLowerCase();
-    if (!n) return undefined;
-    return customerDirectory.find((c) => c.name.trim().toLowerCase() === n);
-  }
   const [selectedDebtorId, setSelectedDebtorId] = useState<number | null>(null);
   const [newDebtorName, setNewDebtorName] = useState(session.customerName || "");
   const [newDebtorPhone, setNewDebtorPhone] = useState(session.customerPhone || "");
@@ -338,17 +333,14 @@ export default function InvoiceModal({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm text-slate-400 mb-1">نام مشتری</label>
-            <input
-              className="form-input"
+            <CustomerNameAutocomplete
               value={customerName}
-              list="im-customer-names"
-              onChange={(e) => {
-                const val = e.target.value;
-                setCustomerName(val);
-                const match = findCustomerByName(val);
-                if (match && !customerPhone) setCustomerPhone(match.phone);
-              }}
+              directory={customerDirectory}
               placeholder="اختیاری"
+              onChange={(name, phone) => {
+                setCustomerName(name);
+                if (phone && !customerPhone) setCustomerPhone(phone);
+              }}
             />
           </div>
           <div>
@@ -356,11 +348,6 @@ export default function InvoiceModal({
             <input className="form-input" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="09..." type="tel" dir="ltr" />
           </div>
         </div>
-        <datalist id="im-customer-names">
-          {customerDirectory.map((c) => (
-            <option key={c.phone} value={c.name} />
-          ))}
-        </datalist>
 
         {/* Cafe Items */}
         <div className="card">
@@ -477,16 +464,11 @@ export default function InvoiceModal({
                 <div className="flex gap-2 items-end">
                   <div className="flex-1">
                     <label className="block text-[10px] text-slate-500 mb-1">نام مشتری</label>
-                    <input
-                      className="form-input w-full"
-                      placeholder="مثلاً علی"
+                    <CustomerNameAutocomplete
                       value={s.label}
-                      list="im-customer-names"
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        const match = findCustomerByName(val);
-                        updateShare(s.key, { label: val, phone: match && !s.phone ? match.phone : s.phone });
-                      }}
+                      directory={customerDirectory}
+                      placeholder="مثلاً علی"
+                      onChange={(name, phone) => updateShare(s.key, { label: name, phone: phone && !s.phone ? phone : s.phone })}
                     />
                   </div>
                   {shares.length > 2 && (
@@ -622,16 +604,13 @@ export default function InvoiceModal({
                   </select>
                   {!selectedDebtorId && (
                     <div className="grid grid-cols-2 gap-2">
-                      <input
-                        className="form-input"
-                        placeholder="نام مشتری..."
+                      <CustomerNameAutocomplete
                         value={newDebtorName}
-                        list="im-customer-names"
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setNewDebtorName(val);
-                          const match = findCustomerByName(val);
-                          if (match && !newDebtorPhone) setNewDebtorPhone(match.phone);
+                        directory={customerDirectory}
+                        placeholder="نام مشتری..."
+                        onChange={(name, phone) => {
+                          setNewDebtorName(name);
+                          if (phone && !newDebtorPhone) setNewDebtorPhone(phone);
                         }}
                       />
                       <input

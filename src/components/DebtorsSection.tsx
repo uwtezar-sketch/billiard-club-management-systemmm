@@ -4,6 +4,7 @@ import Modal from "./Modal";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./Toast";
 import { formatPrice, todayJalaali } from "@/lib/jalaali";
+import CustomerNameAutocomplete from "./CustomerNameAutocomplete";
 
 interface Debt {
   id: number;
@@ -25,7 +26,24 @@ interface Debtor {
   notes: string | null;
   totalDebt: string;
   createdAt: string;
+  customerId: number | null;
+  customerName: string | null;
   debts: Debt[];
+}
+
+interface MergeSuggestion {
+  type: "debtor-customer" | "debtor-debtor";
+  debtorId: number;
+  debtorName: string;
+  debtorPhone: string | null;
+  customerId?: number;
+  customerName?: string;
+  customerPhone?: string;
+  targetDebtorId?: number;
+  targetDebtorName?: string;
+  targetDebtorPhone?: string | null;
+  confidence: "high" | "medium";
+  reason: string;
 }
 
 const OVERDUE_DAYS = 14;
@@ -54,6 +72,74 @@ export default function DebtorsSection() {
   const [debtorForm, setDebtorForm] = useState({ name: "", phone: "", notes: "" });
   const [debtForm, setDebtForm] = useState({ amount: "", description: "", jalaaliDate: todayJalaali() });
 
+  // ── ادغام با باشگاه مشتریان ────────────────────────────────────────────
+  const [mergeSuggestions, setMergeSuggestions] = useState<MergeSuggestion[]>([]);
+  const [suggestionsModal, setSuggestionsModal] = useState(false);
+  const [mergeModal, setMergeModal] = useState<Debtor | null>(null);
+  const [customerDirectory, setCustomerDirectory] = useState<{ id: number; name: string; phone: string }[]>([]);
+  const [mergeCustomerName, setMergeCustomerName] = useState("");
+  const [mergeCustomerId, setMergeCustomerId] = useState<number | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState<{ message: string; existingDebtorId?: number } | null>(null);
+
+  const fetchMergeSuggestions = useCallback(async () => {
+    try {
+      const res = await fetch("/api/debtors/merge-suggestions");
+      setMergeSuggestions(await res.json());
+    } catch {
+      // بی‌سروصدا نادیده بگیر — ابزار کمکیه، نه بخش حیاتی
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMergeSuggestions();
+    fetch("/api/customers").then((r) => r.json()).then((d) => setCustomerDirectory(Array.isArray(d) ? d : []));
+  }, [fetchMergeSuggestions]);
+
+  async function handleMergeToCustomer(debtorId: number, customerId: number) {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/debtors/${debtorId}/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || "خطا در ادغام", "error");
+        return;
+      }
+      showToast(data.linkedOnly ? "بدهکار به مشتری وصل شد" : "با موفقیت ادغام شد", "success");
+      setMergeModal(null);
+      setMergeCustomerName("");
+      setMergeCustomerId(null);
+      fetchData();
+      fetchMergeSuggestions();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleMergeToDebtor(debtorId: number, targetDebtorId: number) {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/debtors/${debtorId}/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetDebtorId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || "خطا در ادغام", "error");
+        return;
+      }
+      showToast("دو بدهکار با موفقیت ادغام شدند", "success");
+      fetchData();
+      fetchMergeSuggestions();
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 400);
     return () => clearTimeout(timer);
@@ -70,20 +156,26 @@ export default function DebtorsSection() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  async function handleAddDebtor() {
+  async function handleAddDebtor(force = false) {
     if (!debtorForm.name) { showToast("نام الزامی است", "error"); return; }
     setLoading(true);
     try {
       const res = await fetch("/api/debtors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(debtorForm),
+        body: JSON.stringify({ ...debtorForm, force }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         showToast("بدهکار اضافه شد", "success");
         setAddDebtorModal(false);
+        setDuplicateWarning(null);
         setDebtorForm({ name: "", phone: "", notes: "" });
         fetchData();
+      } else if (res.status === 409 && !force) {
+        setDuplicateWarning({ message: data.error, existingDebtorId: data.existingDebtorId });
+      } else {
+        showToast(data.error || "خطا در افزودن بدهکار", "error");
       }
     } finally {
       setLoading(false);
@@ -227,6 +319,9 @@ export default function DebtorsSection() {
         <button className="btn btn-primary" onClick={() => setAddDebtorModal(true)}>
           ➕ بدهکار جدید
         </button>
+        <button className="btn btn-secondary" onClick={() => setSuggestionsModal(true)}>
+          🔗 پیشنهاد ادغام{mergeSuggestions.length > 0 ? ` (${mergeSuggestions.length.toLocaleString("fa-IR")})` : ""}
+        </button>
         <button className="btn btn-secondary" onClick={handleExportExcel}>
           ⬇️ اکسل
         </button>
@@ -277,6 +372,11 @@ export default function DebtorsSection() {
                       {isOverdue && (
                         <span className="badge" style={{ background: "#3a2a0c", color: "#e0b23a" }}>
                           ⚠️ {oldestDays.toLocaleString("fa-IR")} روز
+                        </span>
+                      )}
+                      {debtor.customerId && (
+                        <span className="badge" style={{ background: "#2a1a4022", color: "#b794f6" }}>
+                          🔗 {debtor.customerName || "وصل به مشتری"}
                         </span>
                       )}
                     </div>
@@ -363,6 +463,12 @@ export default function DebtorsSection() {
                       )}
                       <button
                         className="btn btn-secondary btn-sm"
+                        onClick={() => { setMergeCustomerName(""); setMergeCustomerId(null); setMergeModal(debtor); }}
+                      >
+                        🔗 {debtor.customerId ? "تغییر اتصال به مشتری" : "ادغام با مشتری"}
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm"
                         onClick={() => { setEditForm({ name: debtor.name, phone: debtor.phone || "", notes: debtor.notes || "" }); setEditDebtorModal(debtor); }}
                       >
                         ✏️ ویرایش
@@ -399,7 +505,7 @@ export default function DebtorsSection() {
           </div>
           <div className="flex gap-3">
             <button className="btn btn-secondary flex-1" onClick={() => setAddDebtorModal(false)}>انصراف</button>
-            <button className="btn btn-primary flex-1" onClick={handleAddDebtor} disabled={loading}>ثبت</button>
+            <button className="btn btn-primary flex-1" onClick={() => handleAddDebtor()} disabled={loading}>ثبت</button>
           </div>
         </div>
       </Modal>
@@ -454,6 +560,89 @@ export default function DebtorsSection() {
           </div>
         </div>
       </Modal>
+
+      {/* Merge with customer Modal */}
+      <Modal open={!!mergeModal} onClose={() => setMergeModal(null)} title={`ادغام «${mergeModal?.name || ""}» با باشگاه مشتریان`}>
+        <div className="space-y-4">
+          <div className="text-sm text-slate-400">
+            مشتری موردنظر رو از باشگاه مشتریان پیدا کن. اگه اون مشتری از قبل بدهکار دیگه‌ای وصل داشته باشه، بدهی‌های این بدهکار به همون منتقل و رکورد تکراری حذف می‌شه.
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">نام مشتری</label>
+            <CustomerNameAutocomplete
+              value={mergeCustomerName}
+              directory={customerDirectory}
+              placeholder="جستجوی نام..."
+              onChange={(name) => {
+                setMergeCustomerName(name);
+                const match = customerDirectory.find((c) => c.name === name);
+                setMergeCustomerId(match ? match.id : null);
+              }}
+            />
+          </div>
+          <div className="flex gap-3">
+            <button className="btn btn-secondary flex-1" onClick={() => setMergeModal(null)}>انصراف</button>
+            <button
+              className="btn btn-primary flex-1"
+              disabled={!mergeCustomerId || loading}
+              onClick={() => mergeModal && mergeCustomerId && handleMergeToCustomer(mergeModal.id, mergeCustomerId)}
+            >
+              🔗 ادغام
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Merge Suggestions Modal */}
+      <Modal open={suggestionsModal} onClose={() => setSuggestionsModal(false)} title="پیشنهادهای ادغام">
+        <div className="space-y-3">
+          {mergeSuggestions.length === 0 ? (
+            <div className="text-center text-slate-500 py-8">هیچ رکورد مشکوک به تکراری‌بودن پیدا نشد 🎉</div>
+          ) : (
+            mergeSuggestions.map((s, idx) => (
+              <div key={idx} className="rounded-lg p-3 space-y-2" style={{ background: "#0e1512", border: "1px solid #26332a" }}>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm">
+                    <span className="text-white font-bold">{s.debtorName}</span>
+                    <span className="text-slate-500"> (بدهکار)</span>
+                    <span className="text-slate-500 mx-1">↔</span>
+                    <span className="text-white font-bold">
+                      {s.type === "debtor-customer" ? s.customerName : s.targetDebtorName}
+                    </span>
+                    <span className="text-slate-500"> ({s.type === "debtor-customer" ? "مشتری" : "بدهکار دیگر"})</span>
+                  </div>
+                  <span
+                    className="badge text-xs"
+                    style={{ background: s.confidence === "high" ? "#0d3b2622" : "#3d2c0f33", color: s.confidence === "high" ? "#5ee89b" : "#e0b23a" }}
+                  >
+                    {s.reason}
+                  </span>
+                </div>
+                <button
+                  className="btn btn-primary btn-sm btn-full"
+                  disabled={loading}
+                  onClick={() =>
+                    s.type === "debtor-customer"
+                      ? handleMergeToCustomer(s.debtorId, s.customerId!)
+                      : handleMergeToDebtor(s.debtorId, s.targetDebtorId!)
+                  }
+                >
+                  🔗 بله، همون یک نفرن — ادغام کن
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </Modal>
+
+      {/* Duplicate debtor warning */}
+      <ConfirmDialog
+        open={!!duplicateWarning}
+        message={duplicateWarning?.message || ""}
+        confirmText="بازم به‌عنوان بدهکار جدید ثبت کن"
+        onConfirm={() => { setDuplicateWarning(null); handleAddDebtor(true); }}
+        onCancel={() => setDuplicateWarning(null)}
+      />
 
       {/* Confirm Settle */}
       <ConfirmDialog

@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useToast } from "./Toast";
 import Modal from "./Modal";
 import { formatPrice, todayJalaali } from "@/lib/jalaali";
+import CustomerNameAutocomplete from "./CustomerNameAutocomplete";
 
 interface CafeMenuItem {
   id: number;
@@ -60,12 +61,6 @@ export default function CafeSection() {
       .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { name: string; phone: string }) => ({ name: c.name, phone: c.phone })) : []))
       .catch(() => {});
   }, []);
-
-  function findCustomerByName(name: string) {
-    const n = name.trim().toLowerCase();
-    if (!n) return undefined;
-    return customerDirectory.find((c) => c.name.trim().toLowerCase() === n);
-  }
 
   const fetchMenu = useCallback(async () => {
     const res = await fetch("/api/cafe");
@@ -283,17 +278,14 @@ export default function CafeSection() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">نام مشتری</label>
-                  <input
-                    className="form-input"
+                  <CustomerNameAutocomplete
                     value={customerName}
-                    list="cafe-customer-names"
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setCustomerName(val);
-                      const match = findCustomerByName(val);
-                      if (match && !customerPhone) setCustomerPhone(match.phone);
-                    }}
+                    directory={customerDirectory}
                     placeholder="اختیاری"
+                    onChange={(name, phone) => {
+                      setCustomerName(name);
+                      if (phone && !customerPhone) setCustomerPhone(phone);
+                    }}
                   />
                 </div>
                 <div>
@@ -341,16 +333,13 @@ export default function CafeSection() {
                   </select>
                   {!debtorId && (
                     <>
-                      <input
-                        className="form-input"
-                        placeholder="نام بدهکار جدید"
+                      <CustomerNameAutocomplete
                         value={newDebtorName}
-                        list="cafe-customer-names"
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setNewDebtorName(val);
-                          const match = findCustomerByName(val);
-                          if (match && !newDebtorPhone) setNewDebtorPhone(match.phone);
+                        directory={customerDirectory}
+                        placeholder="نام بدهکار جدید"
+                        onChange={(name, phone) => {
+                          setNewDebtorName(name);
+                          if (phone && !newDebtorPhone) setNewDebtorPhone(phone);
                         }}
                       />
                       <input className="form-input" placeholder="شماره تلفن (اختیاری)" dir="ltr" value={newDebtorPhone} onChange={(e) => setNewDebtorPhone(e.target.value)} />
@@ -358,11 +347,6 @@ export default function CafeSection() {
                   )}
                 </div>
               )}
-              <datalist id="cafe-customer-names">
-                {customerDirectory.map((c) => (
-                  <option key={c.phone} value={c.name} />
-                ))}
-              </datalist>
 
               <input className="form-input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="یادداشت..." />
             </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { invoices, invoiceShares, debts, debtors } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { findOrCreateDebtor } from "@/lib/debtorLink";
 
 // PATCH /api/invoices/[id]/shares/[shareId]
 // تسویه یا تغییر وضعیت یک سهم مشخص از یک فاکتور تقسیم‌شده
@@ -42,27 +43,12 @@ export async function PATCH(
 
     if (willBeDebt && !wasDebt) {
       // این سهم بدهکاری شد
-      let finalDebtorId: number;
-      if (debtorId) {
-        finalDebtorId = debtorId;
-        const [debtor] = await db.select().from(debtors).where(eq(debtors.id, debtorId));
-        if (debtor) {
-          await db
-            .update(debtors)
-            .set({ totalDebt: (Number(debtor.totalDebt) + Number(share.amount)).toString() })
-            .where(eq(debtors.id, debtorId));
-        }
-      } else {
-        const [newDebtor] = await db
-          .insert(debtors)
-          .values({
-            name: newDebtorName || share.label || "نامشخص",
-            phone: newDebtorPhone || null,
-            totalDebt: share.amount,
-          })
-          .returning();
-        finalDebtorId = newDebtor.id;
-      }
+      const finalDebtorId = await findOrCreateDebtor({
+        debtorId,
+        newDebtorName: newDebtorName || share.label,
+        newDebtorPhone: newDebtorPhone || share.phone || undefined,
+        amount: Number(share.amount),
+      });
 
       const [invoice] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
       await db.insert(debts).values({

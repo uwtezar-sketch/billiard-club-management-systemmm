@@ -30,9 +30,9 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ];
 
 // این ۵ تا همیشه تو نوار پایین‌ان (هم برای مدیر هم کارمند)
-const PRIMARY_TABS: Tab[] = ["tables", "cafe", "reservations", "debtors", "history"];
+const PRIMARY_TABS: Tab[] = ["tables", "cafe", "customers", "debtors", "history"];
 // این ۵ تا فقط برای مدیر، از پشت دکمه‌ی «بیشتر»
-const MORE_TABS: Tab[] = ["report", "dashboard", "customers", "users", "settings"];
+const MORE_TABS: Tab[] = ["report", "dashboard", "reservations", "users", "settings"];
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("tables");

@@ -106,7 +106,7 @@ export async function GET(
     }
 
     const allDebtors = await db.select().from(debtors);
-    const matchingDebtor = allDebtors.find((d) => isSamePerson(person, { phone: d.phone, name: d.name }));
+    const matchingDebtor = allDebtors.find((d) => d.customerId === customer.id) || allDebtors.find((d) => isSamePerson(person, { phone: d.phone, name: d.name }));
     const outstandingDebt = matchingDebtor ? Number(matchingDebtor.totalDebt) : 0;
 
     return NextResponse.json({

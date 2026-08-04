@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { invoices, invoiceItems, sessions, tables, debtors, debts, cafeMenu, invoiceShares } from "@/db/schema";
+import { invoices, invoiceItems, sessions, tables, debts, cafeMenu, invoiceShares } from "@/db/schema";
 import { eq, desc, like, and, or, gte, lte, inArray } from "drizzle-orm";
 import { toJalaali, generateInvoiceNumber } from "@/lib/jalaali";
 import { verifySessionToken } from "@/lib/auth";
+import { findOrCreateDebtor } from "@/lib/debtorLink";
 
 export async function GET(req: NextRequest) {
   try {
@@ -211,31 +212,12 @@ export async function POST(req: NextRequest) {
 
     // Handle debt transfer (فقط برای فاکتورهای غیرتقسیم؛ حالت تقسیم‌شده پایین‌تر جدا مدیریت می‌شه)
     if (!isSplit && (paymentMethod === "debt" || status === "debt")) {
-      let debtorId: number;
-
-      if (body.debtorId) {
-        debtorId = body.debtorId;
-        // Update total debt
-        const [debtor] = await db.select().from(debtors).where(eq(debtors.id, debtorId));
-        if (debtor) {
-          await db
-            .update(debtors)
-            .set({ totalDebt: (Number(debtor.totalDebt) + totalAmount).toString() })
-            .where(eq(debtors.id, debtorId));
-        }
-            } else {
-        // Create new debtor
-        const [newDebtor] = await db
-          .insert(debtors)
-          .values({
-            name: body.newDebtorName || customerName || "نامشخص",
-            phone: body.newDebtorPhone || customerPhone || null,
-            totalDebt: totalAmount.toString(),
-          })
-          .returning();
-        debtorId = newDebtor.id;
-      }
-
+      const debtorId = await findOrCreateDebtor({
+        debtorId: body.debtorId,
+        newDebtorName: body.newDebtorName || customerName,
+        newDebtorPhone: body.newDebtorPhone || customerPhone,
+        amount: totalAmount,
+      });
 
       await db.insert(debts).values({
         debtorId,
@@ -284,26 +266,12 @@ export async function POST(req: NextRequest) {
           .returning();
 
         if (share.status === "debt") {
-          if (share.debtorId) {
-            shareDebtorId = share.debtorId;
-            const [debtor] = await db.select().from(debtors).where(eq(debtors.id, shareDebtorId));
-            if (debtor) {
-              await db
-                .update(debtors)
-                .set({ totalDebt: (Number(debtor.totalDebt) + shareAmount).toString() })
-                .where(eq(debtors.id, shareDebtorId));
-            }
-          } else {
-            const [newDebtor] = await db
-              .insert(debtors)
-              .values({
-                name: share.newDebtorName || share.label || "نامشخص",
-                phone: share.newDebtorPhone || share.phone || null,
-                totalDebt: shareAmount.toString(),
-              })
-              .returning();
-            shareDebtorId = newDebtor.id;
-          }
+          shareDebtorId = await findOrCreateDebtor({
+            debtorId: share.debtorId,
+            newDebtorName: share.newDebtorName || share.label,
+            newDebtorPhone: share.newDebtorPhone || share.phone,
+            amount: shareAmount,
+          });
 
           await db.insert(debts).values({
             debtorId: shareDebtorId,

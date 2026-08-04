@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { invoices, invoiceItems, debts, debtors, invoiceShares } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { findOrCreateDebtor } from "@/lib/debtorLink";
 
 export async function GET(
   _req: NextRequest,
@@ -54,27 +55,12 @@ export async function PATCH(
 
     if (paymentMethod !== undefined && willBeDebt && !wasDebt) {
       // انتقال فاکتور به بدهکاری (مثلاً مشتری الان پول نداشته)
-      let finalDebtorId: number;
-      if (debtorId) {
-        finalDebtorId = debtorId;
-        const [debtor] = await db.select().from(debtors).where(eq(debtors.id, debtorId));
-        if (debtor) {
-          await db
-            .update(debtors)
-            .set({ totalDebt: (Number(debtor.totalDebt) + Number(existing.totalAmount)).toString() })
-            .where(eq(debtors.id, debtorId));
-        }
-      } else {
-        const [newDebtor] = await db
-          .insert(debtors)
-          .values({
-            name: newDebtorName || existing.customerName || "نامشخص",
-            phone: newDebtorPhone || existing.customerPhone || null,
-            totalDebt: existing.totalAmount,
-          })
-          .returning();
-        finalDebtorId = newDebtor.id;
-      }
+      const finalDebtorId = await findOrCreateDebtor({
+        debtorId,
+        newDebtorName: newDebtorName || existing.customerName || undefined,
+        newDebtorPhone: newDebtorPhone || existing.customerPhone || undefined,
+        amount: Number(existing.totalAmount),
+      });
       await db.insert(debts).values({
         debtorId: finalDebtorId,
         invoiceId: existing.id,
