@@ -258,6 +258,7 @@ export async function POST(req: NextRequest) {
     if (isSplit) {
       for (const share of shares as Array<{
         label: string;
+        phone?: string;
         amount: number;
         paymentMethod?: "cash" | "card" | "debt" | null;
         status: "paid" | "debt" | "pending";
@@ -273,6 +274,7 @@ export async function POST(req: NextRequest) {
           .values({
             invoiceId: invoice.id,
             label: share.label,
+            phone: share.phone || null,
             amount: shareAmount.toString(),
             paymentMethod: share.status === "debt" ? "debt" : share.paymentMethod || null,
             status: share.status,
@@ -296,7 +298,7 @@ export async function POST(req: NextRequest) {
               .insert(debtors)
               .values({
                 name: share.newDebtorName || share.label || "نامشخص",
-                phone: share.newDebtorPhone || null,
+                phone: share.newDebtorPhone || share.phone || null,
                 totalDebt: shareAmount.toString(),
               })
               .returning();
