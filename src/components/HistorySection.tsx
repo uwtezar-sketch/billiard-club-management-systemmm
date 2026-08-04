@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Modal from "./Modal";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./Toast";
@@ -11,6 +11,18 @@ interface InvoiceItem {
   quantity: number;
   unitPrice: string;
   totalPrice: string;
+}
+
+interface ShareItem {
+  id: number;
+  invoiceId: number;
+  label: string;
+  phone: string | null;
+  amount: string;
+  paymentMethod: string | null;
+  status: string;
+  debtorId: number | null;
+  settledAt: string | null;
 }
 
 interface Invoice {
@@ -34,6 +46,8 @@ interface Invoice {
   paymentMethod: string | null;
   status: string;
   isPartial: boolean;
+  isSplit: boolean;
+  shares: ShareItem[];
   notes: string | null;
   issuedAt: string;
   issuedByUsername: string | null;
@@ -243,9 +257,90 @@ export default function HistorySection() {
     total: number;
   }
 
+  const [shareDebtorsList, setShareDebtorsList] = useState<Debtor[]>([]);
+  const [shareDebtChoice, setShareDebtChoice] = useState<Record<number, { debtorId: number | ""; newName: string; newPhone: string }>>({});
+  const [shareNameEdits, setShareNameEdits] = useState<Record<number, { label: string; phone: string }>>({});
+  const [shareActionLoading, setShareActionLoading] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (selectedInvoice?.isSplit) {
+      fetch("/api/debtors").then((r) => r.json()).then((d) => setShareDebtorsList(Array.isArray(d) ? d : []));
+      const edits: Record<number, { label: string; phone: string }> = {};
+      for (const sh of selectedInvoice.shares) edits[sh.id] = { label: sh.label, phone: sh.phone || "" };
+      setShareNameEdits(edits);
+    }
+  }, [selectedInvoice]);
+
+  async function refreshSelectedInvoice(id: number) {
+    const res = await fetch(`/api/invoices/${id}`);
+    if (res.ok) {
+      const data = await res.json();
+      setSelectedInvoice(data);
+    }
+    fetchInvoices();
+    fetchPendingAll();
+  }
+
+  async function settleShareAs(shareId: number, status: "paid" | "debt" | "pending", method?: "cash" | "card") {
+    if (!selectedInvoice) return;
+    setShareActionLoading(shareId);
+    try {
+      const body: Record<string, unknown> = { status };
+      if (status === "paid") body.paymentMethod = method || "cash";
+      if (status === "debt") {
+        const choice = shareDebtChoice[shareId];
+        if (choice?.debtorId) {
+          body.debtorId = choice.debtorId;
+        } else {
+          const sh = selectedInvoice.shares.find((s) => s.id === shareId);
+          body.newDebtorName = choice?.newName || sh?.label || "نامشخص";
+          body.newDebtorPhone = choice?.newPhone || sh?.phone || undefined;
+        }
+      }
+      const res = await fetch(`/api/invoices/${selectedInvoice.id}/shares/${shareId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error || "خطا در تسویه سهم", "error");
+        return;
+      }
+      showToast("سهم بروزرسانی شد", "success");
+      await refreshSelectedInvoice(selectedInvoice.id);
+    } finally {
+      setShareActionLoading(null);
+    }
+  }
+
+  async function saveShareName(shareId: number) {
+    if (!selectedInvoice) return;
+    const edit = shareNameEdits[shareId];
+    if (!edit) return;
+    setShareActionLoading(shareId);
+    try {
+      const res = await fetch(`/api/invoices/${selectedInvoice.id}/shares/${shareId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: edit.label, phone: edit.phone || null }),
+      });
+      if (!res.ok) {
+        showToast("خطا در ذخیره نام", "error");
+        return;
+      }
+      showToast("نام سهم ذخیره شد", "success");
+      await refreshSelectedInvoice(selectedInvoice.id);
+    } finally {
+      setShareActionLoading(null);
+    }
+  }
+
   const pendingGroups: PendingGroup[] = (() => {
     const map = new Map<string, PendingGroup>();
+    // فاکتورهای تقسیم‌شده اینجا نمی‌آن چون هر سهمشون صاحب جدا داره و پایین‌تر به‌تفکیک نمایش داده می‌شن
     for (const inv of pendingAll) {
+      if (inv.isSplit) continue;
       const key = inv.customerPhone || inv.customerName || `#${inv.id}`;
       if (!map.has(key)) {
         map.set(key, { key, name: inv.customerName || "بدون نام", phone: inv.customerPhone, invoices: [], total: 0 });
@@ -324,6 +419,22 @@ export default function HistorySection() {
   }
 
   const totalAmountSum = invoices.reduce((s, i) => s + Number(i.totalAmount), 0);
+
+  // فاکتورهای تقسیم‌شده رو به‌ازای هر سهم یک ردیف جدا می‌کنیم، به همراه نام «یار بازی» (بقیه‌ی سهم‌ها)
+  const displayRows = useMemo(() => {
+    const rows: { invoice: Invoice; share: ShareItem | null; partnerLabel: string | null }[] = [];
+    for (const inv of invoices) {
+      if (inv.isSplit && inv.shares.length > 0) {
+        for (const sh of inv.shares) {
+          const partners = inv.shares.filter((s) => s.id !== sh.id).map((s) => s.label).join("، ");
+          rows.push({ invoice: inv, share: sh, partnerLabel: partners || null });
+        }
+      } else {
+        rows.push({ invoice: inv, share: null, partnerLabel: null });
+      }
+    }
+    return rows;
+  }, [invoices]);
 
   function handleExportExcel() {
     const headers = ["شماره فاکتور", "تاریخ", "ساعت", "نام مشتری", "تلفن", "میز", "مدت (دقیقه)", "مبلغ", "وضعیت", "روش پرداخت", "ثبت‌کننده"];
@@ -514,12 +625,15 @@ export default function HistorySection() {
         </div>
       ) : (
         <div className="space-y-2">
-          {invoices.map((inv) => {
-            const s = STATUS_MAP[inv.status] || { label: inv.status, color: "#8a9488" };
+          {displayRows.map(({ invoice: inv, share, partnerLabel }) => {
+            const s = STATUS_MAP[share ? share.status : inv.status] || { label: share ? share.status : inv.status, color: "#8a9488" };
             const time = new Date(inv.issuedAt).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
+            const displayName = share ? share.label : inv.customerName || "بدون نام";
+            const displayAmount = share ? Number(share.amount) : Number(inv.totalAmount);
+            const displayMethod = share ? share.paymentMethod : inv.paymentMethod;
             return (
               <div
-                key={inv.id}
+                key={share ? `${inv.id}-${share.id}` : inv.id}
                 className="card cursor-pointer transition-colors"
                 onClick={() => setSelectedInvoice(inv)}
               >
@@ -536,10 +650,18 @@ export default function HistorySection() {
                       {inv.isPartial && (
                         <span className="badge text-xs" style={{ background: "#2a8fa022", color: "#5ecfe0" }}>جزئی</span>
                       )}
+                      {share && (
+                        <span className="badge text-xs" style={{ background: "#6d3fa022", color: "#b794f6" }}>➗ تقسیم‌شده</span>
+                      )}
                     </div>
                     <div className="mt-1 font-medium text-white">
-                      {inv.customerName || "بدون نام"}
+                      {displayName}
                     </div>
+                    {partnerLabel && (
+                      <div className="text-xs mt-0.5" style={{ color: "#b794f6" }}>
+                        🤝 یار بازی: {partnerLabel}
+                      </div>
+                    )}
                     <div className="text-xs text-slate-400 flex gap-3 flex-wrap mt-1">
                       {inv.tableName && <span>{TYPE_MAP[inv.tableType || ""] || ""} {inv.tableName}</span>}
                       {inv.durationMinutes && <span>⏱ {formatDuration(inv.durationMinutes)}</span>}
@@ -548,9 +670,9 @@ export default function HistorySection() {
                     </div>
                   </div>
                   <div className="text-left">
-                    <div className="font-bold" style={{ color: "#5ee89b" }}>{formatPrice(Number(inv.totalAmount))}</div>
-                    {inv.paymentMethod && (
-                      <div className="text-xs text-slate-400">{PAYMENT_MAP[inv.paymentMethod]}</div>
+                    <div className="font-bold" style={{ color: "#5ee89b" }}>{formatPrice(displayAmount)}</div>
+                    {displayMethod && (
+                      <div className="text-xs text-slate-400">{PAYMENT_MAP[displayMethod]}</div>
                     )}
                   </div>
                 </div>
@@ -600,6 +722,96 @@ export default function HistorySection() {
                 <div><span className="text-slate-400">مدت:</span> <span className="text-white">{formatDuration(selectedInvoice.durationMinutes)}</span></div>
               )}
             </div>
+
+            {selectedInvoice.isSplit && (
+              <div className="rounded-lg p-3 space-y-3" style={{ background: "#1a1330", border: "1px solid #6d3fa055" }}>
+                <div className="font-bold" style={{ color: "#b794f6" }}>➗ این فاکتور بین {selectedInvoice.shares.length.toLocaleString("fa-IR")} نفر تقسیم شده</div>
+                {selectedInvoice.shares.map((sh) => {
+                  const partners = selectedInvoice.shares.filter((x) => x.id !== sh.id).map((x) => x.label).join("، ");
+                  const st = STATUS_MAP[sh.status] || { label: sh.status, color: "#8a9488" };
+                  const nameEdit = shareNameEdits[sh.id] || { label: sh.label, phone: sh.phone || "" };
+                  return (
+                    <div key={sh.id} className="rounded-lg p-3 space-y-2" style={{ background: "#0e1512" }}>
+                      <div className="flex gap-2 items-end">
+                        <div className="flex-1">
+                          <label className="block text-[10px] text-slate-500 mb-1">نام مشتری</label>
+                          <input
+                            className="form-input"
+                            value={nameEdit.label}
+                            onChange={(e) => setShareNameEdits((p) => ({ ...p, [sh.id]: { ...nameEdit, label: e.target.value } }))}
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-[10px] text-slate-500 mb-1">تلفن</label>
+                          <input
+                            className="form-input"
+                            dir="ltr"
+                            value={nameEdit.phone}
+                            onChange={(e) => setShareNameEdits((p) => ({ ...p, [sh.id]: { ...nameEdit, phone: e.target.value } }))}
+                          />
+                        </div>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          disabled={shareActionLoading === sh.id}
+                          onClick={() => saveShareName(sh.id)}
+                        >💾</button>
+                      </div>
+
+                      {partners && (
+                        <div className="text-xs" style={{ color: "#b794f6" }}>🤝 یار بازی: {partners}</div>
+                      )}
+
+                      <div className="flex items-center justify-between">
+                        <span className="badge text-xs" style={{ background: st.color + "22", color: st.color }}>{st.label}</span>
+                        <span className="font-bold" style={{ color: "#5ee89b" }}>{formatPrice(Number(sh.amount))}</span>
+                      </div>
+
+                      {sh.status !== "paid" && (
+                        <div className="flex gap-2">
+                          <button className="btn btn-success btn-sm flex-1" disabled={shareActionLoading === sh.id} onClick={() => settleShareAs(sh.id, "paid", "cash")}>💵 نقد</button>
+                          <button className="btn btn-success btn-sm flex-1" disabled={shareActionLoading === sh.id} onClick={() => settleShareAs(sh.id, "paid", "card")}>💳 کارت</button>
+                        </div>
+                      )}
+
+                      {sh.status === "pending" && (
+                        <div className="space-y-2">
+                          <select
+                            className="form-input"
+                            value={shareDebtChoice[sh.id]?.debtorId || ""}
+                            onChange={(e) =>
+                              setShareDebtChoice((p) => ({
+                                ...p,
+                                [sh.id]: { ...(p[sh.id] || { newName: "", newPhone: "" }), debtorId: e.target.value ? Number(e.target.value) : "" },
+                              }))
+                            }
+                          >
+                            <option value="">تبدیل به بدهکاری برای مشتری جدید...</option>
+                            {shareDebtorsList.map((d) => (
+                              <option key={d.id} value={d.id}>{d.name}{d.phone ? ` (${d.phone})` : ""}</option>
+                            ))}
+                          </select>
+                          <button className="btn btn-secondary btn-sm btn-full" disabled={shareActionLoading === sh.id} onClick={() => settleShareAs(sh.id, "debt")}>
+                            📋 ثبت به‌عنوان بدهکاری
+                          </button>
+                        </div>
+                      )}
+
+                      {sh.status === "debt" && (
+                        <button className="btn btn-secondary btn-sm btn-full" disabled={shareActionLoading === sh.id} onClick={() => settleShareAs(sh.id, "paid", "cash")}>
+                          ✅ بدهی تسویه شد (نقدی)
+                        </button>
+                      )}
+
+                      {sh.status === "paid" && (
+                        <button className="btn btn-secondary btn-sm btn-full" disabled={shareActionLoading === sh.id} onClick={() => settleShareAs(sh.id, "pending")}>
+                          ↩️ بازگردانی به «در انتظار»
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             <div className="space-y-2">
               <div className="flex justify-between">
@@ -686,7 +898,8 @@ export default function HistorySection() {
               </div>
             )}
 
-            {/* ویرایش روش پرداخت و وضعیت تسویه */}
+            {/* ویرایش روش پرداخت و وضعیت تسویه — فقط برای فاکتورهای غیرتقسیم‌شده (برای تقسیم‌شده‌ها بالاتر، هر سهم جدا مدیریت می‌شه) */}
+            {!selectedInvoice.isSplit && (
             <div className="rounded-lg p-3 space-y-3" style={{ background: "#0e1512", border: "1px solid #26332a" }}>
               <div>
                 <div className="text-xs text-slate-400 mb-2">روش پرداخت</div>
@@ -768,6 +981,7 @@ export default function HistorySection() {
                 💾 ذخیره تغییرات پرداخت
               </button>
             </div>
+            )}
 
             <button
               className="btn btn-danger btn-full"
