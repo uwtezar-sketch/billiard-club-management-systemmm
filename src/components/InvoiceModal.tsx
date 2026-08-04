@@ -46,6 +46,7 @@ interface Debtor {
 interface ShareForm {
   key: string;
   label: string;
+  phone: string;
   amount: string; // متن، برای راحتی ویرایش دستی
   status: "paid" | "debt" | "pending";
   paymentMethod: "cash" | "card" | null; // فقط وقتی status='paid'
@@ -95,6 +96,10 @@ export default function InvoiceModal({
   const [newDebtorPhone, setNewDebtorPhone] = useState(session.customerPhone || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ── ویرایش دستی مبلغ نهایی ─────────────────────────────────────────────
+  const [isManualTotal, setIsManualTotal] = useState(false);
+  const [manualTotalInput, setManualTotalInput] = useState("");
+
   // ── تقسیم فاکتور بین چند نفر ──────────────────────────────────────────
   const [isSplitMode, setIsSplitMode] = useState(false);
   const [shares, setShares] = useState<ShareForm[]>([]);
@@ -103,6 +108,7 @@ export default function InvoiceModal({
     return {
       key: Math.random().toString(36).slice(2),
       label,
+      phone: "",
       amount: String(amount),
       status: "pending",
       paymentMethod: "cash",
@@ -114,9 +120,9 @@ export default function InvoiceModal({
 
   function enableSplitMode() {
     setIsSplitMode(true);
-    const half1 = Math.round(totalAmount / 2);
-    const half2 = totalAmount - half1;
-    setShares([makeShare("نفر ۱", half1), makeShare("نفر ۲", half2)]);
+    const half1 = Math.round(referenceTotal / 2);
+    const half2 = referenceTotal - half1;
+    setShares([makeShare("مشتری ۱", half1), makeShare("مشتری ۲", half2)]);
   }
 
   function disableSplitMode() {
@@ -125,7 +131,7 @@ export default function InvoiceModal({
   }
 
   function addShare() {
-    setShares((prev) => [...prev, makeShare(`نفر ${prev.length + 1}`, 0)]);
+    setShares((prev) => [...prev, makeShare(`مشتری ${prev.length + 1}`, 0)]);
   }
 
   function removeShare(key: string) {
@@ -139,8 +145,8 @@ export default function InvoiceModal({
   function splitEqually() {
     setShares((prev) => {
       if (prev.length === 0) return prev;
-      const base = Math.floor(totalAmount / prev.length);
-      const remainder = totalAmount - base * prev.length;
+      const base = Math.floor(referenceTotal / prev.length);
+      const remainder = referenceTotal - base * prev.length;
       return prev.map((s, i) => ({ ...s, amount: String(base + (i === prev.length - 1 ? remainder : 0)) }));
     });
   }
@@ -165,8 +171,9 @@ export default function InvoiceModal({
   if (discountType === "percent") discountAmount = Math.round(subtotal * (Number(discountValue || 0) / 100));
   if (discountType === "fixed") discountAmount = Number(discountValue || 0);
   const totalAmount = Math.max(0, subtotal - discountAmount);
+  const referenceTotal = isManualTotal && manualTotalInput !== "" ? Math.max(0, Number(manualTotalInput)) : totalAmount;
   const sharesSum = shares.reduce((s, sh) => s + (Number(sh.amount) || 0), 0);
-  const sharesMismatch = isSplitMode && sharesSum !== totalAmount;
+  const sharesMismatch = isSplitMode && sharesSum !== referenceTotal;
 
   function addMenuItemToInvoice(item: CafeMenuItem) {
     const existing = selectedCafeItems.find((o) => o.name === item.name && !o.id);
@@ -247,6 +254,7 @@ export default function InvoiceModal({
       if (isSplitMode) {
         body.shares = shares.map((s) => ({
           label: s.label || "بدون‌نام",
+          phone: s.phone || undefined,
           amount: Number(s.amount) || 0,
           status: s.status,
           paymentMethod: s.status === "paid" ? s.paymentMethod || "cash" : s.status === "debt" ? "debt" : null,
@@ -257,6 +265,9 @@ export default function InvoiceModal({
       } else {
         body.paymentMethod = paymentMethod;
         body.status = paymentMethod === "debt" ? "debt" : invoiceStatus;
+        if (isManualTotal && manualTotalInput !== "") {
+          body.manualTotal = Math.max(0, Number(manualTotalInput));
+        }
         if (paymentMethod === "debt") {
           body.debtorId = selectedDebtorId || null;
           if (!selectedDebtorId) {
@@ -380,7 +391,38 @@ export default function InvoiceModal({
           )}
         </div>
 
-        {/* Split toggle */}
+        {/* ویرایش دستی مبلغ نهایی */}
+        <div className="card">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-bold text-slate-300">✏️ ویرایش دستی مبلغ نهایی</h3>
+            <button
+              className={`btn btn-sm ${isManualTotal ? "btn-primary" : "btn-secondary"}`}
+              onClick={() => {
+                if (isManualTotal) {
+                  setIsManualTotal(false);
+                  setManualTotalInput("");
+                } else {
+                  setIsManualTotal(true);
+                  setManualTotalInput(String(totalAmount));
+                }
+              }}
+            >
+              {isManualTotal ? "✕ لغو" : "ویرایش"}
+            </button>
+          </div>
+          {isManualTotal && (
+            <div className="space-y-1">
+              <input
+                type="number"
+                className="form-input"
+                value={manualTotalInput}
+                onChange={(e) => setManualTotalInput(e.target.value)}
+                dir="ltr"
+              />
+              <div className="text-xs text-slate-500">مبلغ محاسبه‌شده توسط سیستم: {formatPrice(totalAmount)}</div>
+            </div>
+          )}
+        </div>
         <div>
           <button
             className={`btn btn-sm w-full ${isSplitMode ? "btn-primary" : "btn-secondary"}`}
@@ -405,12 +447,20 @@ export default function InvoiceModal({
                 <div className="flex gap-2">
                   <input
                     className="form-input flex-1"
-                    placeholder="نام/برچسب"
+                    placeholder="نام مشتری (مثلاً علی)"
                     value={s.label}
                     onChange={(e) => updateShare(s.key, { label: e.target.value })}
                   />
                   <input
-                    className="form-input w-32"
+                    className="form-input w-28"
+                    placeholder="تلفن (اختیاری)"
+                    value={s.phone}
+                    onChange={(e) => updateShare(s.key, { phone: e.target.value })}
+                    type="tel"
+                    dir="ltr"
+                  />
+                  <input
+                    className="form-input w-28"
                     type="number"
                     dir="ltr"
                     placeholder="مبلغ"
@@ -594,8 +644,11 @@ export default function InvoiceModal({
           <div className="divider" />
           <div className="flex justify-between font-bold text-lg">
             <span className="text-white">مبلغ نهایی:</span>
-            <span className="text-green-400">{formatPrice(totalAmount)}</span>
+            <span className="text-green-400">{formatPrice(referenceTotal)}</span>
           </div>
+          {isManualTotal && (
+            <div className="text-xs text-yellow-500 text-left">✏️ این مبلغ به‌صورت دستی ویرایش شده</div>
+          )}
         </div>
 
         <div className="flex gap-3">
