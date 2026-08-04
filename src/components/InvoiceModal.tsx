@@ -444,32 +444,42 @@ export default function InvoiceModal({
 
             {shares.map((s) => (
               <div key={s.key} className="bg-slate-800 rounded-lg p-3 space-y-2">
-                <div className="flex gap-2">
-                  <input
-                    className="form-input flex-1"
-                    placeholder="نام مشتری (مثلاً علی)"
-                    value={s.label}
-                    onChange={(e) => updateShare(s.key, { label: e.target.value })}
-                  />
-                  <input
-                    className="form-input w-28"
-                    placeholder="تلفن (اختیاری)"
-                    value={s.phone}
-                    onChange={(e) => updateShare(s.key, { phone: e.target.value })}
-                    type="tel"
-                    dir="ltr"
-                  />
-                  <input
-                    className="form-input w-28"
-                    type="number"
-                    dir="ltr"
-                    placeholder="مبلغ"
-                    value={s.amount}
-                    onChange={(e) => updateShare(s.key, { amount: e.target.value })}
-                  />
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <label className="block text-[10px] text-slate-500 mb-1">نام مشتری</label>
+                    <input
+                      className="form-input w-full"
+                      placeholder="مثلاً علی"
+                      value={s.label}
+                      onChange={(e) => updateShare(s.key, { label: e.target.value })}
+                    />
+                  </div>
                   {shares.length > 2 && (
-                    <button className="text-red-400 text-xs px-2" onClick={() => removeShare(s.key)}>✕</button>
+                    <button className="text-red-400 text-xs px-2 pb-2" onClick={() => removeShare(s.key)}>✕ حذف</button>
                   )}
+                </div>
+
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="block text-[10px] text-slate-500 mb-1">تلفن (اختیاری)</label>
+                    <input
+                      className="form-input w-full"
+                      value={s.phone}
+                      onChange={(e) => updateShare(s.key, { phone: e.target.value })}
+                      type="tel"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-[10px] text-slate-500 mb-1">مبلغ سهم</label>
+                    <input
+                      className="form-input w-full"
+                      type="number"
+                      dir="ltr"
+                      value={s.amount}
+                      onChange={(e) => updateShare(s.key, { amount: e.target.value })}
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-4 gap-1">
