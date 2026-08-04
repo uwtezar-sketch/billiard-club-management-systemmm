@@ -123,7 +123,8 @@ export const debtors = pgTable("debtors", {
 export const invoiceShares = pgTable("invoice_shares", {
   id: serial("id").primaryKey(),
   invoiceId: integer("invoice_id").notNull().references(() => invoices.id),
-  label: text("label").notNull(), // e.g. "نفر ۱" or a customer name
+  label: text("label").notNull(), // نام شخصی که این سهم مال اونه (مثلاً "علی")
+  phone: varchar("phone", { length: 20 }), // اختیاری، برای تشخیص دقیق‌تر مشتری
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
   paymentMethod: text("payment_method"), // 'cash' | 'card' | 'debt' | null
   status: text("status").notNull().default("pending"), // 'paid' | 'debt' | 'pending'
