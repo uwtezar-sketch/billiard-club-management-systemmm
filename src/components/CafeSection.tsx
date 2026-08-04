@@ -39,6 +39,7 @@ export default function CafeSection() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "debt">("cash");
+  const [orderStatus, setOrderStatus] = useState<"paid" | "pending">("paid");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [successModal, setSuccessModal] = useState(false);
@@ -100,6 +101,7 @@ export default function CafeSection() {
     setNewDebtorName("");
     setNewDebtorPhone("");
     setPaymentMethod("cash");
+    setOrderStatus("paid");
   }
 
   async function handleSubmit() {
@@ -153,7 +155,7 @@ export default function CafeSection() {
         discountType: null,
         discountValue: 0,
         paymentMethod,
-        status: paymentMethod === "debt" ? "debt" : "paid",
+        status: paymentMethod === "debt" ? "debt" : orderStatus,
         notes,
         jalaaliDate: todayJalaali(),
       };
@@ -286,6 +288,23 @@ export default function CafeSection() {
                   </button>
                 ))}
               </div>
+
+              {paymentMethod !== "debt" && (
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">وضعیت تسویه</label>
+                  <div className="flex gap-2">
+                    {(["paid", "pending"] as const).map((s) => (
+                      <button
+                        key={s}
+                        className={`btn btn-sm flex-1 ${orderStatus === s ? "btn-primary" : "btn-secondary"}`}
+                        onClick={() => setOrderStatus(s)}
+                      >
+                        {s === "paid" ? "✅ تسویه شده" : "⏳ در انتظار"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {paymentMethod === "debt" && (
                 <div className="space-y-2 rounded-lg p-3" style={{ background: "#0e1512", border: "1px solid #26332a" }}>
