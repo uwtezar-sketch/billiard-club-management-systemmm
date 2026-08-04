@@ -52,6 +52,20 @@ export default function CafeSection() {
   const [debtorId, setDebtorId] = useState<number | "">("");
   const [newDebtorName, setNewDebtorName] = useState("");
   const [newDebtorPhone, setNewDebtorPhone] = useState("");
+  const [customerDirectory, setCustomerDirectory] = useState<{ name: string; phone: string }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/customers")
+      .then((r) => r.json())
+      .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { name: string; phone: string }) => ({ name: c.name, phone: c.phone })) : []))
+      .catch(() => {});
+  }, []);
+
+  function findCustomerByName(name: string) {
+    const n = name.trim().toLowerCase();
+    if (!n) return undefined;
+    return customerDirectory.find((c) => c.name.trim().toLowerCase() === n);
+  }
 
   const fetchMenu = useCallback(async () => {
     const res = await fetch("/api/cafe");
@@ -269,7 +283,18 @@ export default function CafeSection() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">نام مشتری</label>
-                  <input className="form-input" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="اختیاری" />
+                  <input
+                    className="form-input"
+                    value={customerName}
+                    list="cafe-customer-names"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCustomerName(val);
+                      const match = findCustomerByName(val);
+                      if (match && !customerPhone) setCustomerPhone(match.phone);
+                    }}
+                    placeholder="اختیاری"
+                  />
                 </div>
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">تلفن</label>
@@ -316,12 +341,28 @@ export default function CafeSection() {
                   </select>
                   {!debtorId && (
                     <>
-                      <input className="form-input" placeholder="نام بدهکار جدید" value={newDebtorName} onChange={(e) => setNewDebtorName(e.target.value)} />
+                      <input
+                        className="form-input"
+                        placeholder="نام بدهکار جدید"
+                        value={newDebtorName}
+                        list="cafe-customer-names"
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewDebtorName(val);
+                          const match = findCustomerByName(val);
+                          if (match && !newDebtorPhone) setNewDebtorPhone(match.phone);
+                        }}
+                      />
                       <input className="form-input" placeholder="شماره تلفن (اختیاری)" dir="ltr" value={newDebtorPhone} onChange={(e) => setNewDebtorPhone(e.target.value)} />
                     </>
                   )}
                 </div>
               )}
+              <datalist id="cafe-customer-names">
+                {customerDirectory.map((c) => (
+                  <option key={c.phone} value={c.name} />
+                ))}
+              </datalist>
 
               <input className="form-input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="یادداشت..." />
             </div>

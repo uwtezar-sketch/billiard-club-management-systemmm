@@ -104,6 +104,20 @@ export default function HistorySection() {
   const [editMethod, setEditMethod] = useState<string>("cash");
   const [editStatus, setEditStatus] = useState<string>("pending");
   const [debtorsList, setDebtorsList] = useState<Debtor[]>([]);
+  const [customerDirectory, setCustomerDirectory] = useState<{ name: string; phone: string }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/customers")
+      .then((r) => r.json())
+      .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { name: string; phone: string }) => ({ name: c.name, phone: c.phone })) : []))
+      .catch(() => {});
+  }, []);
+
+  function findCustomerByName(name: string) {
+    const n = name.trim().toLowerCase();
+    if (!n) return undefined;
+    return customerDirectory.find((c) => c.name.trim().toLowerCase() === n);
+  }
   const [editDebtorId, setEditDebtorId] = useState<number | "">("");
   const [editNewDebtorName, setEditNewDebtorName] = useState("");
   const [editNewDebtorPhone, setEditNewDebtorPhone] = useState("");
@@ -249,11 +263,21 @@ export default function HistorySection() {
     }
   }
 
+  interface PendingEntry {
+    invoiceId: number;
+    invoiceNumber: string;
+    jalaaliDate: string | null;
+    tableName: string | null;
+    amount: number;
+    shareId: number | null; // اگه این ورودی مال یک سهمِ فاکتور تقسیم‌شده باشه
+    partnerLabel: string | null;
+  }
+
   interface PendingGroup {
     key: string;
     name: string;
     phone: string | null;
-    invoices: Invoice[];
+    entries: PendingEntry[];
     total: number;
   }
 
@@ -336,31 +360,77 @@ export default function HistorySection() {
     }
   }
 
+  function normName(s: string | null | undefined): string {
+    return (s || "").trim().toLowerCase().replace(/\s+/g, " ");
+  }
+  function normPhone(s: string | null | undefined): string {
+    return (s || "").replace(/\D/g, "");
+  }
+
   const pendingGroups: PendingGroup[] = (() => {
     const map = new Map<string, PendingGroup>();
-    // فاکتورهای تقسیم‌شده اینجا نمی‌آن چون هر سهمشون صاحب جدا داره و پایین‌تر به‌تفکیک نمایش داده می‌شن
-    for (const inv of pendingAll) {
-      if (inv.isSplit) continue;
-      const key = inv.customerPhone || inv.customerName || `#${inv.id}`;
+
+    function addEntry(name: string, phone: string | null, entry: PendingEntry) {
+      const key = normPhone(phone) ? `p:${normPhone(phone)}` : `n:${normName(name)}`;
+      if (key === "n:" || key === "p:") return;
       if (!map.has(key)) {
-        map.set(key, { key, name: inv.customerName || "بدون نام", phone: inv.customerPhone, invoices: [], total: 0 });
+        map.set(key, { key, name: name || "بدون نام", phone, entries: [], total: 0 });
       }
       const g = map.get(key)!;
-      g.invoices.push(inv);
-      g.total += Number(inv.totalAmount);
+      if (phone && !g.phone) g.phone = phone;
+      g.entries.push(entry);
+      g.total += entry.amount;
     }
-    return [...map.values()].filter((g) => g.invoices.length >= 2).sort((a, b) => b.total - a.total);
+
+    for (const inv of pendingAll) {
+      if (inv.isSplit) {
+        // هر سهمِ «در انتظار» زیر نام و تلفن خودش گروه‌بندی می‌شه — نه زیر نام کلی فاکتور
+        for (const sh of inv.shares) {
+          if (sh.status !== "pending") continue;
+          const partners = inv.shares.filter((x) => x.id !== sh.id).map((x) => x.label).join("، ");
+          addEntry(sh.label, sh.phone, {
+            invoiceId: inv.id,
+            invoiceNumber: inv.invoiceNumber,
+            jalaaliDate: inv.jalaaliDate,
+            tableName: inv.tableName,
+            amount: Number(sh.amount),
+            shareId: sh.id,
+            partnerLabel: partners || null,
+          });
+        }
+      } else {
+        addEntry(inv.customerName || "بدون نام", inv.customerPhone, {
+          invoiceId: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          jalaaliDate: inv.jalaaliDate,
+          tableName: inv.tableName,
+          amount: Number(inv.totalAmount),
+          shareId: null,
+          partnerLabel: null,
+        });
+      }
+    }
+
+    return [...map.values()].filter((g) => g.entries.length >= 2).sort((a, b) => b.total - a.total);
   })();
 
   async function handleBulkSettle(group: PendingGroup) {
     setBulkSettlingKey(group.key);
     try {
-      for (const inv of group.invoices) {
-        await fetch(`/api/invoices/${inv.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "paid" }),
-        });
+      for (const entry of group.entries) {
+        if (entry.shareId) {
+          await fetch(`/api/invoices/${entry.invoiceId}/shares/${entry.shareId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "paid", paymentMethod: "cash" }),
+          });
+        } else {
+          await fetch(`/api/invoices/${entry.invoiceId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "paid", paymentMethod: "cash" }),
+          });
+        }
       }
       showToast(`همه‌ی فاکتورهای ${group.name} تسویه شد`, "success");
       fetchInvoices();
@@ -566,7 +636,7 @@ export default function HistorySection() {
                     <div>
                       <div className="text-white font-medium">{g.name}</div>
                       <div className="text-xs text-slate-400">
-                        {g.invoices.length.toLocaleString("fa-IR")} فاکتور در انتظار
+                        {g.entries.length.toLocaleString("fa-IR")} فاکتور در انتظار
                         {g.phone && <span dir="ltr"> — {g.phone}</span>}
                       </div>
                     </div>
@@ -575,12 +645,15 @@ export default function HistorySection() {
 
                   {isExpanded && (
                     <div className="mt-3 space-y-2">
-                      {g.invoices.map((inv) => (
-                        <div key={inv.id} className="flex justify-between text-xs rounded px-3 py-2" style={{ background: "#0e1512" }}>
+                      {g.entries.map((entry) => (
+                        <div key={`${entry.invoiceId}-${entry.shareId || "full"}`} className="flex justify-between text-xs rounded px-3 py-2" style={{ background: "#0e1512" }}>
                           <span className="text-slate-300">
-                            {inv.invoiceNumber} — {inv.jalaaliDate} — {inv.tableName || ""}
+                            {entry.invoiceNumber} — {entry.jalaaliDate} — {entry.tableName || ""}
+                            {entry.partnerLabel && (
+                              <span style={{ color: "#b794f6" }}> — 🤝 با {entry.partnerLabel}</span>
+                            )}
                           </span>
-                          <span style={{ color: "#f27f8a" }}>{formatPrice(Number(inv.totalAmount))}</span>
+                          <span style={{ color: "#f27f8a" }}>{formatPrice(entry.amount)}</span>
                         </div>
                       ))}
                       <button
@@ -738,7 +811,15 @@ export default function HistorySection() {
                           <input
                             className="form-input"
                             value={nameEdit.label}
-                            onChange={(e) => setShareNameEdits((p) => ({ ...p, [sh.id]: { ...nameEdit, label: e.target.value } }))}
+                            list="hs-customer-names"
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const match = findCustomerByName(val);
+                              setShareNameEdits((p) => ({
+                                ...p,
+                                [sh.id]: { label: val, phone: match && !nameEdit.phone ? match.phone : nameEdit.phone },
+                              }));
+                            }}
                           />
                         </div>
                         <div className="flex-1">
@@ -935,7 +1016,13 @@ export default function HistorySection() {
                         className="form-input"
                         placeholder="نام بدهکار جدید"
                         value={editNewDebtorName}
-                        onChange={(e) => setEditNewDebtorName(e.target.value)}
+                        list="hs-customer-names"
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEditNewDebtorName(val);
+                          const match = findCustomerByName(val);
+                          if (match && !editNewDebtorPhone) setEditNewDebtorPhone(match.phone);
+                        }}
                       />
                       <input
                         className="form-input"
@@ -948,6 +1035,11 @@ export default function HistorySection() {
                   )}
                 </div>
               )}
+              <datalist id="hs-customer-names">
+                {customerDirectory.map((c) => (
+                  <option key={c.phone} value={c.name} />
+                ))}
+              </datalist>
 
               {editMethod === "debt" && selectedInvoice.status === "debt" && (
                 <div className="text-xs" style={{ color: "#e0b23a" }}>این فاکتور همین الان هم روی بدهکاری ثبت شده.</div>

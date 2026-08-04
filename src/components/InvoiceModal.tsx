@@ -91,6 +91,20 @@ export default function InvoiceModal({
   const [invoiceStatus, setInvoiceStatus] = useState<"paid" | "debt" | "pending">("paid");
   const [notes, setNotes] = useState("");
   const [debtors, setDebtors] = useState<Debtor[]>([]);
+  const [customerDirectory, setCustomerDirectory] = useState<{ name: string; phone: string }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/customers")
+      .then((r) => r.json())
+      .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { name: string; phone: string }) => ({ name: c.name, phone: c.phone })) : []))
+      .catch(() => {});
+  }, []);
+
+  function findCustomerByName(name: string) {
+    const n = name.trim().toLowerCase();
+    if (!n) return undefined;
+    return customerDirectory.find((c) => c.name.trim().toLowerCase() === n);
+  }
   const [selectedDebtorId, setSelectedDebtorId] = useState<number | null>(null);
   const [newDebtorName, setNewDebtorName] = useState(session.customerName || "");
   const [newDebtorPhone, setNewDebtorPhone] = useState(session.customerPhone || "");
@@ -324,13 +338,29 @@ export default function InvoiceModal({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm text-slate-400 mb-1">نام مشتری</label>
-            <input className="form-input" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="اختیاری" />
+            <input
+              className="form-input"
+              value={customerName}
+              list="im-customer-names"
+              onChange={(e) => {
+                const val = e.target.value;
+                setCustomerName(val);
+                const match = findCustomerByName(val);
+                if (match && !customerPhone) setCustomerPhone(match.phone);
+              }}
+              placeholder="اختیاری"
+            />
           </div>
           <div>
             <label className="block text-sm text-slate-400 mb-1">شماره تلفن</label>
             <input className="form-input" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="09..." type="tel" dir="ltr" />
           </div>
         </div>
+        <datalist id="im-customer-names">
+          {customerDirectory.map((c) => (
+            <option key={c.phone} value={c.name} />
+          ))}
+        </datalist>
 
         {/* Cafe Items */}
         <div className="card">
@@ -451,7 +481,12 @@ export default function InvoiceModal({
                       className="form-input w-full"
                       placeholder="مثلاً علی"
                       value={s.label}
-                      onChange={(e) => updateShare(s.key, { label: e.target.value })}
+                      list="im-customer-names"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const match = findCustomerByName(val);
+                        updateShare(s.key, { label: val, phone: match && !s.phone ? match.phone : s.phone });
+                      }}
                     />
                   </div>
                   {shares.length > 2 && (
@@ -591,7 +626,13 @@ export default function InvoiceModal({
                         className="form-input"
                         placeholder="نام مشتری..."
                         value={newDebtorName}
-                        onChange={(e) => setNewDebtorName(e.target.value)}
+                        list="im-customer-names"
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewDebtorName(val);
+                          const match = findCustomerByName(val);
+                          if (match && !newDebtorPhone) setNewDebtorPhone(match.phone);
+                        }}
                       />
                       <input
                         className="form-input"

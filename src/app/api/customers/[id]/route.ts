@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { customers, invoices, invoiceItems, debtors } from "@/db/schema";
+import { customers, invoices, invoiceItems, invoiceShares, debtors } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { normalizePhone } from "@/lib/phone";
+import { isSamePerson } from "@/lib/personMatch";
 
 export async function GET(
   _req: NextRequest,
@@ -13,25 +13,86 @@ export async function GET(
     const [customer] = await db.select().from(customers).where(eq(customers.id, parseInt(id)));
     if (!customer) return NextResponse.json({ error: "مشتری یافت نشد" }, { status: 404 });
 
-    const normalizedPhone = normalizePhone(customer.phone);
+    const person = { phone: customer.phone, name: customer.name };
     const allInvoices = await db.select().from(invoices);
-    const matching = allInvoices
-      .filter((i) => normalizePhone(i.customerPhone) === normalizedPhone)
-      .sort((a, b) => new Date(b.issuedAt).getTime() - new Date(a.issuedAt).getTime());
+    const splitInvoices = allInvoices.filter((i) => i.isSplit);
+    const allShares = splitInvoices.length
+      ? await db.select().from(invoiceShares).where(inArray(invoiceShares.invoiceId, splitInvoices.map((i) => i.id)))
+      : [];
+    const invoiceById = new Map(allInvoices.map((i) => [i.id, i]));
 
-    const visitCount = matching.length;
-    const totalSpent = matching.reduce((s, i) => s + Number(i.totalAmount), 0);
-    const gameSpent = matching.reduce((s, i) => s + Number(i.gamePrice), 0);
-    const cafeSpent = matching.reduce((s, i) => s + Number(i.cafeTotal), 0);
+    const matchingInvoices = allInvoices.filter((i) => !i.isSplit && isSamePerson(person, { phone: i.customerPhone, name: i.customerName }));
+    const matchingShares = allShares.filter((sh) => isSamePerson(person, { phone: sh.phone, name: sh.label }));
+
+    // یک تاریخچه‌ی یکپارچه می‌سازیم: هم فاکتورهای عادی، هم سهم‌های این شخص از فاکتورهای تقسیم‌شده
+    type HistoryEntry = {
+      invoiceId: number;
+      shareId: number | null;
+      invoiceNumber: string;
+      jalaaliDate: string | null;
+      issuedAt: string;
+      tableName: string | null;
+      tableType: string | null;
+      amount: number;
+      status: string;
+      paymentMethod: string | null;
+      isSplit: boolean;
+      partnerLabel: string | null;
+    };
+    const history: HistoryEntry[] = [];
+
+    for (const inv of matchingInvoices) {
+      history.push({
+        invoiceId: inv.id,
+        shareId: null,
+        invoiceNumber: inv.invoiceNumber,
+        jalaaliDate: inv.jalaaliDate,
+        issuedAt: inv.issuedAt as unknown as string,
+        tableName: inv.tableName,
+        tableType: inv.tableType,
+        amount: Number(inv.totalAmount),
+        status: inv.status,
+        paymentMethod: inv.paymentMethod,
+        isSplit: false,
+        partnerLabel: null,
+      });
+    }
+    for (const sh of matchingShares) {
+      const inv = invoiceById.get(sh.invoiceId);
+      if (!inv) continue;
+      const partners = allShares.filter((x) => x.invoiceId === sh.invoiceId && x.id !== sh.id).map((x) => x.label).join("، ");
+      history.push({
+        invoiceId: inv.id,
+        shareId: sh.id,
+        invoiceNumber: inv.invoiceNumber,
+        jalaaliDate: inv.jalaaliDate,
+        issuedAt: inv.issuedAt as unknown as string,
+        tableName: inv.tableName,
+        tableType: inv.tableType,
+        amount: Number(sh.amount),
+        status: sh.status,
+        paymentMethod: sh.paymentMethod,
+        isSplit: true,
+        partnerLabel: partners || null,
+      });
+    }
+    history.sort((a, b) => new Date(b.issuedAt).getTime() - new Date(a.issuedAt).getTime());
+
+    const visitCount = history.length;
+    const totalPaid = history.filter((h) => h.status === "paid").reduce((s, h) => s + h.amount, 0);
+    const totalDebtCreated = history.filter((h) => h.status === "debt").reduce((s, h) => s + h.amount, 0);
+    const totalPendingAmount = history.filter((h) => h.status === "pending").reduce((s, h) => s + h.amount, 0);
+    const cafeSpent = matchingInvoices.reduce((s, i) => s + Number(i.cafeTotal || 0), 0);
+    const gameSpent = matchingInvoices.reduce((s, i) => s + Number(i.gamePrice || 0), 0);
 
     const typeCounts: Record<string, number> = {};
-    for (const inv of matching) {
-      if (inv.tableType) typeCounts[inv.tableType] = (typeCounts[inv.tableType] || 0) + 1;
+    for (const h of history) {
+      if (h.tableType) typeCounts[h.tableType] = (typeCounts[h.tableType] || 0) + 1;
     }
     const favoriteType = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 
     let favoriteCafeItems: { name: string; quantity: number }[] = [];
-    const invoiceIds = matching.map((i) => i.id);
+    const invoiceIds = matchingInvoices.map((i) => i.id);
     if (invoiceIds.length > 0) {
       const items = await db.select().from(invoiceItems).where(inArray(invoiceItems.invoiceId, invoiceIds));
       const map = new Map<string, number>();
@@ -45,19 +106,21 @@ export async function GET(
     }
 
     const allDebtors = await db.select().from(debtors);
-    const matchingDebtor = allDebtors.find((d) => normalizePhone(d.phone) === normalizedPhone && normalizedPhone !== "");
+    const matchingDebtor = allDebtors.find((d) => isSamePerson(person, { phone: d.phone, name: d.name }));
     const outstandingDebt = matchingDebtor ? Number(matchingDebtor.totalDebt) : 0;
 
     return NextResponse.json({
       ...customer,
       visitCount,
-      totalSpent,
-      gameSpent,
+      totalPaid,
+      totalDebtCreated,
+      totalPendingAmount,
+      outstandingDebt,
       cafeSpent,
+      gameSpent,
       favoriteType,
       favoriteCafeItems,
-      outstandingDebt,
-      invoices: matching.slice(0, 20),
+      history,
     });
   } catch (e) {
     console.error(e);

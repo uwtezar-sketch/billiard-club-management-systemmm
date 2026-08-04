@@ -13,25 +13,35 @@ interface Customer {
   isVip: boolean;
   createdAt: string;
   visitCount: number;
-  totalSpent: number;
+  totalPaid: number;
+  totalDebtCreated: number;
+  totalPendingAmount: number;
+  outstandingDebt: number;
   cafeSpent: number;
   lastVisit: string | null;
   daysSinceVisit: number | null;
+}
+
+interface HistoryEntry {
+  invoiceId: number;
+  shareId: number | null;
+  invoiceNumber: string;
+  jalaaliDate: string | null;
+  issuedAt: string;
+  tableName: string | null;
+  tableType: string | null;
+  amount: number;
+  status: string;
+  paymentMethod: string | null;
+  isSplit: boolean;
+  partnerLabel: string | null;
 }
 
 interface CustomerDetail extends Customer {
   gameSpent: number;
   favoriteType: string | null;
   favoriteCafeItems: { name: string; quantity: number }[];
-  outstandingDebt: number;
-  invoices: {
-    id: number;
-    invoiceNumber: string;
-    jalaaliDate: string | null;
-    totalAmount: string;
-    tableName: string | null;
-    status: string;
-  }[];
+  history: HistoryEntry[];
 }
 
 interface Suggestion {
@@ -45,6 +55,18 @@ const TYPE_LABELS: Record<string, string> = {
   snooker: "🎱 اسنوکر",
   eightball: "🎳 ایت‌بال",
   playstation: "🎮 پلی‌استیشن",
+};
+
+const STATUS_MAP: Record<string, { label: string; color: string }> = {
+  paid: { label: "✅ تسویه‌شده", color: "#5ee89b" },
+  debt: { label: "📋 بدهی", color: "#f27f8a" },
+  pending: { label: "⏳ در انتظار", color: "#e0b23a" },
+};
+
+const PAYMENT_MAP: Record<string, string> = {
+  cash: "💵 نقدی",
+  card: "💳 کارت",
+  debt: "📋 بدهکاری",
 };
 
 const INACTIVE_DAYS = 30;
@@ -102,7 +124,9 @@ export default function CustomersSection() {
     setAddModal(true);
   }
 
-  async function handleAdd() {
+  const [duplicateConfirm, setDuplicateConfirm] = useState<string | null>(null);
+
+  async function handleAdd(force = false) {
     if (!form.name || !form.phone) {
       showToast("نام و شماره تلفن الزامی است", "error");
       return;
@@ -112,15 +136,20 @@ export default function CustomersSection() {
       const res = await fetch("/api/customers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, force }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
+        if (data.duplicateName && !force) {
+          setDuplicateConfirm(data.error);
+          return;
+        }
         showToast(data.error || "خطا در ثبت مشتری", "error");
         return;
       }
       showToast("مشتری به باشگاه اضافه شد", "success");
       setAddModal(false);
+      setDuplicateConfirm(null);
       resetForm();
       fetchCustomers();
       fetchSuggestions();
@@ -250,8 +279,11 @@ export default function CustomersSection() {
                     </div>
                   </div>
                   <div className="text-left">
-                    <div className="font-bold" style={{ color: "#5ee89b" }}>{formatPrice(c.totalSpent)}</div>
-                    <div className="text-xs text-slate-500">مجموع خرید</div>
+                    <div className="font-bold" style={{ color: "#5ee89b" }}>{formatPrice(c.totalPaid)}</div>
+                    <div className="text-xs text-slate-500">واقعاً پرداخت‌کرده</div>
+                    {c.outstandingDebt > 0 && (
+                      <div className="text-xs font-bold mt-0.5" style={{ color: "#f27f8a" }}>بدهی: {formatPrice(c.outstandingDebt)}</div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -284,7 +316,7 @@ export default function CustomersSection() {
           </button>
           <div className="flex gap-3">
             <button className="btn btn-secondary flex-1" onClick={() => { setAddModal(false); resetForm(); }}>انصراف</button>
-            <button className="btn btn-primary flex-1" onClick={handleAdd} disabled={loading}>ثبت</button>
+            <button className="btn btn-primary flex-1" onClick={() => handleAdd()} disabled={loading}>ثبت</button>
           </div>
         </div>
       </Modal>
@@ -343,8 +375,8 @@ export default function CustomersSection() {
                 <div className="text-[10px] text-slate-500">مراجعه</div>
               </div>
               <div className="rounded-lg p-2 text-center" style={{ background: "#0e1512" }}>
-                <div className="text-sm font-bold" style={{ color: "#5ee89b" }}>{formatPrice(detail.totalSpent)}</div>
-                <div className="text-[10px] text-slate-500">مجموع خرید</div>
+                <div className="text-sm font-bold" style={{ color: "#5ee89b" }}>{formatPrice(detail.totalPaid)}</div>
+                <div className="text-[10px] text-slate-500">واقعاً پرداخت‌کرده</div>
               </div>
               <div className="rounded-lg p-2 text-center" style={{ background: "#0e1512" }}>
                 <div className="text-sm font-bold" style={{ color: "#e0b23a" }}>{formatPrice(detail.cafeSpent)}</div>
@@ -352,11 +384,16 @@ export default function CustomersSection() {
               </div>
             </div>
 
-            {detail.outstandingDebt > 0 && (
-              <div className="rounded-lg p-3 text-sm" style={{ background: "#3d101633", border: "1px solid #8f1d2c" }}>
-                ⚠️ بدهی باز: <span className="font-bold" style={{ color: "#f27f8a" }}>{formatPrice(detail.outstandingDebt)}</span>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg p-2 text-center" style={{ background: "#3d101633", border: "1px solid #8f1d2c" }}>
+                <div className="text-sm font-bold" style={{ color: "#f27f8a" }}>{formatPrice(detail.outstandingDebt)}</div>
+                <div className="text-[10px] text-red-300">بدهیِ باز الان</div>
               </div>
-            )}
+              <div className="rounded-lg p-2 text-center" style={{ background: "#3d2c0f33", border: "1px solid #8f6f1d" }}>
+                <div className="text-sm font-bold text-yellow-400">{formatPrice(detail.totalPendingAmount)}</div>
+                <div className="text-[10px] text-yellow-300">در انتظار تسویه</div>
+              </div>
+            </div>
 
             {detail.favoriteType && (
               <div className="text-slate-300">
@@ -378,16 +415,28 @@ export default function CustomersSection() {
               </div>
             )}
 
-            {detail.invoices.length > 0 && (
+            {detail.history.length > 0 && (
               <div>
-                <div className="text-slate-400 mb-2">📂 آخرین فاکتورها:</div>
+                <div className="text-slate-400 mb-2">📂 تاریخچه‌ی کامل (پرداخت‌ها و بدهی‌ها):</div>
                 <div className="space-y-1">
-                  {detail.invoices.slice(0, 8).map((inv) => (
-                    <div key={inv.id} className="flex justify-between text-xs rounded px-3 py-1.5" style={{ background: "#0e1512" }}>
-                      <span className="text-slate-300">{inv.jalaaliDate} — {inv.tableName || ""}</span>
-                      <span style={{ color: "#5ee89b" }}>{formatPrice(Number(inv.totalAmount))}</span>
-                    </div>
-                  ))}
+                  {detail.history.map((h) => {
+                    const st = STATUS_MAP[h.status] || { label: h.status, color: "#8a9488" };
+                    return (
+                      <div key={`${h.invoiceId}-${h.shareId || "full"}`} className="rounded px-3 py-1.5 text-xs" style={{ background: "#0e1512" }}>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-300">
+                            {h.jalaaliDate} — {h.tableName || ""}
+                            {h.isSplit && <span style={{ color: "#b794f6" }}> (تقسیم‌شده)</span>}
+                          </span>
+                          <span className="font-bold" style={{ color: st.color }}>{formatPrice(h.amount)}</span>
+                        </div>
+                        <div className="flex justify-between items-center mt-0.5">
+                          <span style={{ color: st.color }}>{st.label}{h.paymentMethod && h.status === "paid" ? ` — ${PAYMENT_MAP[h.paymentMethod] || ""}` : ""}</span>
+                          {h.partnerLabel && <span style={{ color: "#b794f6" }}>🤝 با {h.partnerLabel}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -398,6 +447,14 @@ export default function CustomersSection() {
           </div>
         ) : null}
       </Modal>
+
+      <ConfirmDialog
+        open={!!duplicateConfirm}
+        message={duplicateConfirm || ""}
+        confirmText="بازم به‌عنوان مشتری جدید ثبت کن"
+        onConfirm={() => { setDuplicateConfirm(null); handleAdd(true); }}
+        onCancel={() => setDuplicateConfirm(null)}
+      />
 
       <ConfirmDialog
         open={!!deleteId}
