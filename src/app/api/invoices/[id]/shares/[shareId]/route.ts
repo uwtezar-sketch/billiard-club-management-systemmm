@@ -14,9 +14,10 @@ export async function PATCH(
     const invoiceId = parseInt(id);
     const shareIdNum = parseInt(shareId);
     const body = await req.json();
-    const { status, paymentMethod, debtorId, newDebtorName, newDebtorPhone } = body;
+    const { status, paymentMethod, debtorId, newDebtorName, newDebtorPhone, label, phone } = body;
     // status: 'paid' | 'debt' | 'pending'
     // paymentMethod (فقط برای paid): 'cash' | 'card'
+    // label/phone: تغییر نام یا شماره‌ی صاحبِ این سهم (بدون تغییر وضعیت پرداخت)
 
     const [share] = await db
       .select()
@@ -27,6 +28,8 @@ export async function PATCH(
     const wasDebt = share.status === "debt";
     const willBeDebt = status === "debt";
     const updateData: Record<string, unknown> = {};
+    if (label !== undefined) updateData.label = label;
+    if (phone !== undefined) updateData.phone = phone;
 
     if (status !== undefined) updateData.status = status;
     if (status === "paid") {
