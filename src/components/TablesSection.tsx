@@ -5,6 +5,7 @@ import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./Toast";
 import { formatDuration, calcPrice, formatPrice, toJalaali } from "@/lib/jalaali";
 import InvoiceModal from "./InvoiceModal";
+import CustomerNameAutocomplete from "./CustomerNameAutocomplete";
 
 interface Table {
   id: number;
@@ -135,6 +136,15 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
   const [menuItems, setMenuItems] = useState<CafeMenuItem[]>([]);
   const [settings, setSettings] = useState<Settings>({});
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [customerDirectory, setCustomerDirectory] = useState<{ name: string; phone: string }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/customers")
+      .then((r) => r.json())
+      .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { name: string; phone: string }) => ({ name: c.name, phone: c.phone })) : []))
+      .catch(() => {});
+  }, []);
+
 const [loading, setLoading] = useState(true);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [syncFailed, setSyncFailed] = useState(false);
@@ -505,11 +515,13 @@ const [loading, setLoading] = useState(true);
           )}
           <div>
             <label className="block text-sm text-slate-400 mb-1">نام مشتری (اختیاری)</label>
-            <input
-              className="form-input"
-              placeholder="نام مشتری..."
+            <CustomerNameAutocomplete
               value={startForm.customerName}
-              onChange={(e) => setStartForm((p) => ({ ...p, customerName: e.target.value }))}
+              directory={customerDirectory}
+              placeholder="نام مشتری..."
+              onChange={(name, phone) =>
+                setStartForm((p) => ({ ...p, customerName: name, customerPhone: phone && !p.customerPhone ? phone : p.customerPhone }))
+              }
             />
           </div>
           <div>
@@ -619,10 +631,10 @@ const [loading, setLoading] = useState(true);
               </div>
               <div>
                 <label className="block text-xs text-slate-400 mb-1">نام مشتری</label>
-                <input
-                  className="form-input"
+                <CustomerNameAutocomplete
                   value={editCustomer}
-                  onChange={(e) => setEditCustomer(e.target.value)}
+                  directory={customerDirectory}
+                  onChange={(name) => setEditCustomer(name)}
                 />
               </div>
               <div>

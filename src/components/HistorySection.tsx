@@ -763,7 +763,15 @@ export default function HistorySection() {
               <div className="flex gap-2 items-end">
                 <div className="flex-1">
                   <label className="block text-[10px] text-slate-500 mb-1">نام مشتری</label>
-                  <input className="form-input" value={editCustomerName} onChange={(e) => setEditCustomerName(e.target.value)} placeholder="بدون نام" />
+                  <CustomerNameAutocomplete
+                    value={editCustomerName}
+                    directory={customerDirectory}
+                    placeholder="بدون نام"
+                    onChange={(name, phone) => {
+                      setEditCustomerName(name);
+                      if (phone && !editCustomerPhone) setEditCustomerPhone(phone);
+                    }}
+                  />
                 </div>
                 <div className="flex-1">
                   <label className="block text-[10px] text-slate-500 mb-1">تلفن</label>

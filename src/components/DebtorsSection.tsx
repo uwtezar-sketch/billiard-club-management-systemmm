@@ -493,7 +493,11 @@ export default function DebtorsSection() {
         <div className="space-y-4">
           <div>
             <label className="block text-xs text-slate-400 mb-1">نام *</label>
-            <input className="form-input" value={debtorForm.name} onChange={(e) => setDebtorForm((p) => ({ ...p, name: e.target.value }))} />
+            <CustomerNameAutocomplete
+              value={debtorForm.name}
+              directory={customerDirectory}
+              onChange={(name, phone) => setDebtorForm((p) => ({ ...p, name, phone: phone && !p.phone ? phone : p.phone }))}
+            />
           </div>
           <div>
             <label className="block text-xs text-slate-400 mb-1">شماره تلفن</label>
