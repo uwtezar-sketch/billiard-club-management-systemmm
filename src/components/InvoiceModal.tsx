@@ -131,7 +131,7 @@ export default function InvoiceModal({
     setIsSplitMode(true);
     const half1 = Math.round(referenceTotal / 2);
     const half2 = referenceTotal - half1;
-    setShares([makeShare("مشتری ۱", half1), makeShare("مشتری ۲", half2)]);
+    setShares([makeShare("", half1), makeShare("", half2)]);
   }
 
   function disableSplitMode() {
@@ -140,7 +140,7 @@ export default function InvoiceModal({
   }
 
   function addShare() {
-    setShares((prev) => [...prev, makeShare(`مشتری ${prev.length + 1}`, 0)]);
+    setShares((prev) => [...prev, makeShare("", 0)]);
   }
 
   function removeShare(key: string) {

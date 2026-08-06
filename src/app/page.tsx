@@ -12,9 +12,10 @@ import DashboardSection from "@/components/DashboardSection";
 import CafeSection from "@/components/CafeSection";
 import UsersSection from "@/components/UsersSection";
 import CustomersSection from "@/components/CustomersSection";
+import InventorySection from "@/components/InventorySection";
 import { todayJalaali } from "@/lib/jalaali";
 
-type Tab = "tables" | "cafe" | "reservations" | "debtors" | "history" | "report" | "dashboard" | "settings" | "users" | "customers";
+type Tab = "tables" | "cafe" | "reservations" | "debtors" | "history" | "report" | "dashboard" | "settings" | "users" | "customers" | "inventory";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "tables", label: "میزها", icon: "🎱" },
@@ -25,13 +26,14 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "report", label: "گزارش", icon: "📊" },
   { id: "dashboard", label: "داشبورد", icon: "📈" },
   { id: "customers", label: "باشگاه مشتریان", icon: "🎖️" },
+  { id: "inventory", label: "انبار", icon: "📦" },
   { id: "users", label: "کاربران", icon: "👤" },
   { id: "settings", label: "تنظیمات", icon: "⚙️" },
 ];
 
-// این ۵ تا همیشه تو نوار پایین‌ان (هم برای مدیر هم کارمند)
-const PRIMARY_TABS: Tab[] = ["tables", "cafe", "customers", "debtors", "history"];
-// این ۵ تا فقط برای مدیر، از پشت دکمه‌ی «بیشتر»
+// این ۶ تا همیشه تو نوار پایین‌ان (هم برای مدیر هم کارمند)
+const PRIMARY_TABS: Tab[] = ["tables", "cafe", "customers", "inventory", "debtors", "history"];
+// این ۴ تا فقط برای مدیر، از پشت دکمه‌ی «بیشتر»
 const MORE_TABS: Tab[] = ["report", "dashboard", "reservations", "users", "settings"];
 
 export default function Home() {
@@ -253,6 +255,7 @@ useEffect(() => {
           {activeTab === "report" && <DailyReportSection />}
           {activeTab === "dashboard" && <DashboardSection />}
           {activeTab === "customers" && <CustomersSection />}
+          {activeTab === "inventory" && <InventorySection />}
           {activeTab === "users" && <UsersSection />}
           {activeTab === "settings" && <SettingsSection />}
         </main>

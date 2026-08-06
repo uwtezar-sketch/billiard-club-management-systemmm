@@ -19,14 +19,24 @@ export function toJalaali(date: Date): string {
   return `${jy}/${String(jm).padStart(2, "0")}/${String(jd).padStart(2, "0")}`;
 }
 
+const JALALI_MONTHS = [
+  "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+  "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
+];
+
 export function toJalaaliLabel(date: Date): string {
-  const months = [
-    "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
-    "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
-  ];
   const { y, m, d } = getTehranYMD(date);
   const { jy, jm, jd } = jalaali.toJalaali(y, m, d);
-  return `${jd} ${months[jm - 1]} ${jy}`;
+  return `${jd} ${JALALI_MONTHS[jm - 1]} ${jy}`;
+}
+
+// مثال خروجی: «چهارشنبه ۱۸ مرداد ساعت ۲۱:۲۵» — برای نمایش «آخرین بروزرسانی»
+export function toJalaaliFullLabel(date: Date): string {
+  const { y, m, d } = getTehranYMD(date);
+  const { jm, jd } = jalaali.toJalaali(y, m, d);
+  const weekday = new Intl.DateTimeFormat("fa-IR", { timeZone: "Asia/Tehran", weekday: "long" }).format(date);
+  const time = date.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tehran" });
+  return `${weekday} ${jd} ${JALALI_MONTHS[jm - 1]} ساعت ${time}`;
 }
 
 export function formatTime(date: Date): string {

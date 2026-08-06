@@ -183,6 +183,30 @@ export const activityLogs = pgTable("activity_logs", {
   details: jsonb("details"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+// ─── انبار / موجودی (Inventory) ───────────────────────────────────────────────
+export const inventoryItems = pgTable("inventory_items", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  category: text("category"), // مثلاً «کافه»، «نظافت»، «یخچال» — اختیاری، برای دسته‌بندی
+  unit: text("unit").notNull().default("عدد"), // عدد، کیلوگرم، بسته، لیتر...
+  currentQuantity: numeric("current_quantity", { precision: 12, scale: 2 }).notNull().default("0"),
+  minThreshold: numeric("min_threshold", { precision: 12, scale: 2 }), // زیر این مقدار = «کم»
+  notes: text("notes"),
+  lastUpdatedAt: timestamp("last_updated_at").notNull().defaultNow(),
+  lastUpdatedByUsername: text("last_updated_by_username"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const inventoryLogs = pgTable("inventory_logs", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id").notNull().references(() => inventoryItems.id),
+  previousQuantity: numeric("previous_quantity", { precision: 12, scale: 2 }).notNull(),
+  newQuantity: numeric("new_quantity", { precision: 12, scale: 2 }).notNull(),
+  note: text("note"),
+  byUsername: text("by_username"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // ─── Customers (باشگاه مشتریان) ───────────────────────────────────────────────
 export const customers = pgTable("customers", {
   id: serial("id").primaryKey(),

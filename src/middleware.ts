@@ -36,6 +36,12 @@ const EMPLOYEE_ALLOWED: { method: string; pattern: RegExp }[] = [
   { method: "POST", pattern: /^\/api\/customers$/ },
   { method: "GET", pattern: /^\/api\/customers\/suggestions$/ },
   { method: "GET", pattern: /^\/api\/customers\/\d+$/ },
+  // انبار: دیدن، افزودن، بروزرسانی موجودی و حذف — برای همه (هم مدیر هم کارمند)
+  { method: "GET", pattern: /^\/api\/inventory$/ },
+  { method: "POST", pattern: /^\/api\/inventory$/ },
+  { method: "GET", pattern: /^\/api\/inventory\/\d+$/ },
+  { method: "PATCH", pattern: /^\/api\/inventory\/\d+$/ },
+  { method: "DELETE", pattern: /^\/api\/inventory\/\d+$/ },
   { method: "GET", pattern: /^\/api\/auth\/me$/ },
   { method: "POST", pattern: /^\/api\/auth\/logout$/ },
 ];
