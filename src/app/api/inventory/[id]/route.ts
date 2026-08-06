@@ -4,13 +4,6 @@ import { inventoryItems, inventoryLogs } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { verifySessionToken } from "@/lib/auth";
 
-function computeStatus(currentQuantity: string, minThreshold: string | null): "out" | "low" | "ok" {
-  const qty = Number(currentQuantity);
-  if (qty <= 0) return "out";
-  if (minThreshold !== null && qty <= Number(minThreshold)) return "low";
-  return "ok";
-}
-
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -24,7 +17,7 @@ export async function GET(
       .from(inventoryLogs)
       .where(eq(inventoryLogs.itemId, item.id))
       .orderBy(desc(inventoryLogs.createdAt));
-    return NextResponse.json({ ...item, status: computeStatus(item.currentQuantity, item.minThreshold), logs });
+    return NextResponse.json({ ...item, logs });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "خطا در دریافت کالا" }, { status: 500 });
@@ -39,7 +32,7 @@ export async function PATCH(
     const { id } = await params;
     const itemId = parseInt(id);
     const body = await req.json();
-    const { name, category, unit, currentQuantity, minThreshold, notes, note } = body;
+    const { name, category, unit, currentQuantity, status, notes, note } = body;
 
     const [existing] = await db.select().from(inventoryItems).where(eq(inventoryItems.id, itemId));
     if (!existing) return NextResponse.json({ error: "کالا یافت نشد" }, { status: 404 });
@@ -51,16 +44,21 @@ export async function PATCH(
     if (name !== undefined) updateData.name = name;
     if (category !== undefined) updateData.category = category || null;
     if (unit !== undefined) updateData.unit = unit;
-    if (minThreshold !== undefined) updateData.minThreshold = minThreshold === null || minThreshold === "" ? null : minThreshold.toString();
     if (notes !== undefined) updateData.notes = notes || null;
+    if (status !== undefined && (status === "ok" || status === "low" || status === "out")) {
+      updateData.status = status;
+    }
 
-    // اگه مقدار موجودی تغییر کرده، هم زمان آخرین بروزرسانی رو ثبت کن، هم توی تاریخچه بنویس
+    // اگه مقدار موجودی تغییر کرده، هم آخرین بروزرسانی رو ثبت کن، هم توی تاریخچه بنویس
     if (currentQuantity !== undefined && currentQuantity !== null) {
       const newQty = Number(currentQuantity);
       if (newQty !== Number(existing.currentQuantity)) {
         updateData.currentQuantity = newQty.toString();
         updateData.lastUpdatedAt = new Date();
         updateData.lastUpdatedByUsername = currentUser?.username || null;
+        // اگه موجودی به صفر رسید، به‌عنوان یک پیش‌فرض مفید خودکار «تمام شده» می‌کنیم
+        // (ولی اگه کاربر توی همین درخواست خودش status دیگه‌ای فرستاده، همون رو محترم می‌شماریم)
+        if (newQty <= 0 && status === undefined) updateData.status = "out";
 
         await db.insert(inventoryLogs).values({
           itemId,
@@ -70,10 +68,14 @@ export async function PATCH(
           byUsername: currentUser?.username || null,
         });
       }
+    } else if (status !== undefined) {
+      // فقط وضعیت (کم/کافی/تمام‌شده) عوض شده، بدون تغییر عدد — بازم یک بروزرسانی حساب می‌شه
+      updateData.lastUpdatedAt = new Date();
+      updateData.lastUpdatedByUsername = currentUser?.username || null;
     }
 
     const [updated] = await db.update(inventoryItems).set(updateData).where(eq(inventoryItems.id, itemId)).returning();
-    return NextResponse.json({ ...updated, status: computeStatus(updated.currentQuantity, updated.minThreshold) });
+    return NextResponse.json(updated);
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "خطا در بروزرسانی کالا" }, { status: 500 });

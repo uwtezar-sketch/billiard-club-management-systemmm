@@ -11,7 +11,6 @@ interface InventoryItem {
   category: string | null;
   unit: string;
   currentQuantity: string;
-  minThreshold: string | null;
   notes: string | null;
   lastUpdatedAt: string;
   lastUpdatedByUsername: string | null;
@@ -49,8 +48,8 @@ export default function InventorySection() {
   const [historyLogs, setHistoryLogs] = useState<InventoryLog[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  const [addForm, setAddForm] = useState({ name: "", category: "", unit: "عدد", currentQuantity: "", minThreshold: "" });
-  const [editForm, setEditForm] = useState({ name: "", category: "", unit: "", minThreshold: "" });
+  const [addForm, setAddForm] = useState({ name: "", category: "", unit: "عدد", currentQuantity: "" });
+  const [editForm, setEditForm] = useState({ name: "", category: "", unit: "" });
   const [updateForm, setUpdateForm] = useState({ quantity: "", note: "" });
 
   const fetchItems = useCallback(async () => {
@@ -78,17 +77,31 @@ export default function InventorySection() {
         category: addForm.category || null,
         unit: addForm.unit || "عدد",
         currentQuantity: addForm.currentQuantity || 0,
-        minThreshold: addForm.minThreshold || null,
       }),
     });
     if (res.ok) {
       showToast("کالا اضافه شد", "success");
       setAddModal(false);
-      setAddForm({ name: "", category: "", unit: "عدد", currentQuantity: "", minThreshold: "" });
+      setAddForm({ name: "", category: "", unit: "عدد", currentQuantity: "" });
       fetchItems();
     } else {
       const data = await res.json().catch(() => ({}));
       showToast(data.error || "خطا در افزودن کالا", "error");
+    }
+  }
+
+  async function handleSetStatus(item: InventoryItem, status: "ok" | "low" | "out") {
+    setItems((prev) => prev.map((it) => (it.id === item.id ? { ...it, status } : it)));
+    const res = await fetch(`/api/inventory/${item.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setItems((prev) => prev.map((it) => (it.id === item.id ? updated : it)));
+    } else {
+      fetchItems();
     }
   }
 
@@ -134,7 +147,6 @@ export default function InventorySection() {
         name: editForm.name,
         category: editForm.category || null,
         unit: editForm.unit,
-        minThreshold: editForm.minThreshold || null,
       }),
     });
     if (res.ok) {
@@ -235,6 +247,25 @@ export default function InventorySection() {
                       <button className="btn btn-secondary btn-sm" onClick={() => handleQuickStep(item, 1)}>+</button>
                     </div>
                   </div>
+
+                  <div className="flex gap-1 mt-2">
+                    {(["ok", "low", "out"] as const).map((s) => (
+                      <button
+                        key={s}
+                        className="btn btn-sm flex-1"
+                        style={{
+                          background: item.status === s ? STATUS_MAP[s].bg : "transparent",
+                          color: STATUS_MAP[s].color,
+                          border: `1px solid ${STATUS_MAP[s].color}55`,
+                          opacity: item.status === s ? 1 : 0.55,
+                        }}
+                        onClick={() => handleSetStatus(item, s)}
+                      >
+                        {STATUS_MAP[s].label}
+                      </button>
+                    ))}
+                  </div>
+
                   <div className="flex gap-2 mt-2">
                     <button
                       className="btn btn-secondary btn-sm flex-1"
@@ -252,7 +283,6 @@ export default function InventorySection() {
                           name: item.name,
                           category: item.category || "",
                           unit: item.unit,
-                          minThreshold: item.minThreshold || "",
                         });
                         setEditModal(item);
                       }}
@@ -287,15 +317,9 @@ export default function InventorySection() {
               <input className="form-input" placeholder="عدد / کیلوگرم / بسته..." value={addForm.unit} onChange={(e) => setAddForm((p) => ({ ...p, unit: e.target.value }))} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">موجودی فعلی</label>
-              <input className="form-input" type="number" dir="ltr" value={addForm.currentQuantity} onChange={(e) => setAddForm((p) => ({ ...p, currentQuantity: e.target.value }))} />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">حداقل (زیرش = «کم»)</label>
-              <input className="form-input" type="number" dir="ltr" placeholder="اختیاری" value={addForm.minThreshold} onChange={(e) => setAddForm((p) => ({ ...p, minThreshold: e.target.value }))} />
-            </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">موجودی فعلی</label>
+            <input className="form-input" type="number" dir="ltr" value={addForm.currentQuantity} onChange={(e) => setAddForm((p) => ({ ...p, currentQuantity: e.target.value }))} />
           </div>
           <button className="btn btn-primary btn-full" onClick={handleAdd}>ثبت</button>
         </div>
@@ -339,10 +363,6 @@ export default function InventorySection() {
               <label className="block text-xs text-slate-400 mb-1">واحد</label>
               <input className="form-input" value={editForm.unit} onChange={(e) => setEditForm((p) => ({ ...p, unit: e.target.value }))} />
             </div>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">حداقل (زیرش = «کم»)</label>
-            <input className="form-input" type="number" dir="ltr" value={editForm.minThreshold} onChange={(e) => setEditForm((p) => ({ ...p, minThreshold: e.target.value }))} />
           </div>
           <button className="btn btn-primary btn-full" onClick={handleSaveEdit}>💾 ذخیره</button>
         </div>

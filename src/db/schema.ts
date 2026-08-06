@@ -149,6 +149,18 @@ export const debts = pgTable("debts", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// پرداخت‌های دستیِ جزئی روی حساب یک بدهکار (مثلاً از ۷٬۵۰۰٬۰۰۰ فقط ۱٬۰۰۰٬۰۰۰ پرداخت کرده)
+// این جدا از جدول «debts» (که هر ردیفش یک فاکتور/بدهیه) نگه داشته می‌شه چون پرداخت جزئی لزوماً مال یک فاکتور خاص نیست.
+export const debtorPayments = pgTable("debtor_payments", {
+  id: serial("id").primaryKey(),
+  debtorId: integer("debtor_id").notNull().references(() => debtors.id),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  note: text("note"),
+  jalaaliDate: text("jalaali_date"),
+  byUsername: text("by_username"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // ─── Reservations (رزروها) ────────────────────────────────────────────────────
 export const reservations = pgTable("reservations", {
   id: serial("id").primaryKey(),
@@ -190,7 +202,7 @@ export const inventoryItems = pgTable("inventory_items", {
   category: text("category"), // مثلاً «کافه»، «نظافت»، «یخچال» — اختیاری، برای دسته‌بندی
   unit: text("unit").notNull().default("عدد"), // عدد، کیلوگرم، بسته، لیتر...
   currentQuantity: numeric("current_quantity", { precision: 12, scale: 2 }).notNull().default("0"),
-  minThreshold: numeric("min_threshold", { precision: 12, scale: 2 }), // زیر این مقدار = «کم»
+  status: text("status").notNull().default("ok"), // 'ok' | 'low' | 'out' — با یک ضربه دستی تنظیم می‌شه، عدد و آستانه لازم نیست
   notes: text("notes"),
   lastUpdatedAt: timestamp("last_updated_at").notNull().defaultNow(),
   lastUpdatedByUsername: text("last_updated_by_username"),

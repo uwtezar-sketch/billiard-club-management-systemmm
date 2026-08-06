@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { debtors, debts, customers } from "@/db/schema";
+import { debtors, debts, customers, debtorPayments } from "@/db/schema";
 import { eq, like, desc } from "drizzle-orm";
 import { isSamePerson } from "@/lib/personMatch";
 
@@ -26,8 +26,13 @@ export async function GET(req: NextRequest) {
           .from(debts)
           .where(eq(debts.debtorId, debtor.id))
           .orderBy(desc(debts.createdAt));
+        const paymentRows = await db
+          .select()
+          .from(debtorPayments)
+          .where(eq(debtorPayments.debtorId, debtor.id))
+          .orderBy(desc(debtorPayments.createdAt));
         const linkedCustomer = debtor.customerId ? customerById.get(debtor.customerId) : null;
-        return { ...debtor, debts: debtRows, customerName: linkedCustomer?.name || null };
+        return { ...debtor, debts: debtRows, payments: paymentRows, customerName: linkedCustomer?.name || null };
       })
     );
 

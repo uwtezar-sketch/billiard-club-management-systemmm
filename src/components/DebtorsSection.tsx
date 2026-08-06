@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import Modal from "./Modal";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./Toast";
-import { formatPrice, todayJalaali } from "@/lib/jalaali";
+import { formatPrice, todayJalaali, toJalaaliFullLabel } from "@/lib/jalaali";
 import CustomerNameAutocomplete from "./CustomerNameAutocomplete";
 
 interface Debt {
@@ -19,6 +19,16 @@ interface Debt {
   createdAt: string;
 }
 
+interface DebtorPayment {
+  id: number;
+  debtorId: number;
+  amount: string;
+  note: string | null;
+  jalaaliDate: string | null;
+  byUsername: string | null;
+  createdAt: string;
+}
+
 interface Debtor {
   id: number;
   name: string;
@@ -29,6 +39,7 @@ interface Debtor {
   customerId: number | null;
   customerName: string | null;
   debts: Debt[];
+  payments: DebtorPayment[];
 }
 
 interface MergeSuggestion {
@@ -71,6 +82,35 @@ export default function DebtorsSection() {
 
   const [debtorForm, setDebtorForm] = useState({ name: "", phone: "", notes: "" });
   const [debtForm, setDebtForm] = useState({ amount: "", description: "", jalaaliDate: todayJalaali() });
+  const [paymentForm, setPaymentForm] = useState<Record<number, { amount: string; note: string }>>({});
+  const [payingId, setPayingId] = useState<number | null>(null);
+
+  async function handleRecordPayment(debtorId: number) {
+    const form = paymentForm[debtorId];
+    const amount = Number(form?.amount || 0);
+    if (!amount || amount <= 0) {
+      showToast("مبلغ پرداختی رو درست وارد کن", "error");
+      return;
+    }
+    setPayingId(debtorId);
+    try {
+      const res = await fetch(`/api/debtors/${debtorId}/payments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount, note: form?.note || undefined }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(data.error || "خطا در ثبت پرداخت", "error");
+        return;
+      }
+      showToast("پرداخت ثبت شد", "success");
+      setPaymentForm((p) => ({ ...p, [debtorId]: { amount: "", note: "" } }));
+      fetchData();
+    } finally {
+      setPayingId(null);
+    }
+  }
 
   // ── ادغام با باشگاه مشتریان ────────────────────────────────────────────
   const [mergeSuggestions, setMergeSuggestions] = useState<MergeSuggestion[]>([]);
@@ -445,6 +485,55 @@ export default function DebtorsSection() {
                     ) : (
                       <div className="text-center text-slate-500 text-sm">ردیف بدهی وجود ندارد</div>
                     )}
+
+                    {/* ثبت پرداخت دستی — کادر جداگانه، مستقل از ردیف‌های بدهی */}
+                    <div className="rounded-lg p-3 space-y-2" style={{ background: "#0d1f16", border: "1px solid #1a7a4c55" }}>
+                      <div className="text-sm font-bold" style={{ color: "#5ee89b" }}>💰 ثبت پرداخت</div>
+                      <div className="text-xs text-slate-500">
+                        مبلغی که پرداخت کرده رو وارد کن — از کل بدهیش کم می‌شه و با تاریخ و ساعت ثبت می‌مونه.
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          className="form-input flex-1"
+                          type="number"
+                          dir="ltr"
+                          placeholder="مبلغ پرداختی (تومان)"
+                          value={paymentForm[debtor.id]?.amount || ""}
+                          onChange={(e) =>
+                            setPaymentForm((p) => ({ ...p, [debtor.id]: { amount: e.target.value, note: p[debtor.id]?.note || "" } }))
+                          }
+                        />
+                        <button
+                          className="btn btn-success btn-sm"
+                          disabled={payingId === debtor.id}
+                          onClick={() => handleRecordPayment(debtor.id)}
+                        >
+                          ثبت
+                        </button>
+                      </div>
+                      <input
+                        className="form-input"
+                        placeholder="توضیح (اختیاری) — مثلاً نقدی گرفتم"
+                        value={paymentForm[debtor.id]?.note || ""}
+                        onChange={(e) =>
+                          setPaymentForm((p) => ({ ...p, [debtor.id]: { amount: p[debtor.id]?.amount || "", note: e.target.value } }))
+                        }
+                      />
+
+                      {debtor.payments.length > 0 && (
+                        <div className="space-y-1 pt-1">
+                          {debtor.payments.map((pmt) => (
+                            <div key={pmt.id} className="flex justify-between items-center text-xs rounded px-2 py-1.5" style={{ background: "#0e1512" }}>
+                              <div>
+                                <div className="text-slate-300">{toJalaaliFullLabel(new Date(pmt.createdAt))}</div>
+                                {pmt.note && <div className="text-slate-500 mt-0.5">📝 {pmt.note}</div>}
+                              </div>
+                              <span className="font-bold" style={{ color: "#5ee89b" }}>{formatPrice(Number(pmt.amount))}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
                     <div className="flex gap-2 flex-wrap">
                       <button
