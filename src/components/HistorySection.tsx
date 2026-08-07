@@ -119,7 +119,6 @@ export default function HistorySection() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [editCustomerName, setEditCustomerName] = useState("");
   const [editCustomerPhone, setEditCustomerPhone] = useState("");
-  const [savingName, setSavingName] = useState(false);
   const [pendingAll, setPendingAll] = useState<Invoice[]>([]);
   const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
   const [bulkSettlingKey, setBulkSettlingKey] = useState<string | null>(null);
@@ -197,45 +196,33 @@ export default function HistorySection() {
     fetchInvoices();
   }
 
-  async function handleSaveCustomerInfo() {
-    if (!selectedInvoice) return;
-    setSavingName(true);
-    try {
-      const res = await fetch(`/api/invoices/${selectedInvoice.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customerName: editCustomerName, customerPhone: editCustomerPhone }),
-      });
-      if (!res.ok) {
-        showToast("خطا در ذخیره نام مشتری", "error");
-        return;
-      }
-      showToast("نام فاکتور بروزرسانی شد", "success");
-      fetchInvoices();
-      setSelectedInvoice((prev) => (prev ? { ...prev, customerName: editCustomerName || null, customerPhone: editCustomerPhone || null } : prev));
-    } finally {
-      setSavingName(false);
-    }
-  }
-
   async function handleSavePaymentEdit() {
     if (!selectedInvoice) return;
-    const body: Record<string, unknown> = { paymentMethod: editMethod };
+    const body: Record<string, unknown> = {
+      customerName: editCustomerName || null,
+      customerPhone: editCustomerPhone || null,
+    };
 
-    const movingToDebt = editMethod === "debt" && selectedInvoice.status !== "debt";
-    if (movingToDebt) {
-      if (editDebtorId) {
-        body.debtorId = editDebtorId;
-      } else {
-        if (!editNewDebtorName) {
-          showToast("نام بدهکار را وارد کنید", "error");
-          return;
+    // فاکتورهای تقسیم‌شده روش پرداخت/وضعیت واحد ندارن (هر سهم جدا مدیریت می‌شه بالاتر)،
+    // پس فقط نام/تلفن رو می‌فرستیم و از بقیه‌ی این منطق صرف‌نظر می‌کنیم
+    if (!selectedInvoice.isSplit) {
+      body.paymentMethod = editMethod;
+
+      const movingToDebt = editMethod === "debt" && selectedInvoice.status !== "debt";
+      if (movingToDebt) {
+        if (editDebtorId) {
+          body.debtorId = editDebtorId;
+        } else {
+          if (!editNewDebtorName) {
+            showToast("نام بدهکار را وارد کنید", "error");
+            return;
+          }
+          body.newDebtorName = editNewDebtorName;
+          body.newDebtorPhone = editNewDebtorPhone || null;
         }
-        body.newDebtorName = editNewDebtorName;
-        body.newDebtorPhone = editNewDebtorPhone || null;
+      } else if (editMethod !== "debt") {
+        body.status = editStatus;
       }
-    } else if (editMethod !== "debt") {
-      body.status = editStatus;
     }
 
     setSavingEdit(true);
@@ -777,10 +764,8 @@ export default function HistorySection() {
                   <label className="block text-[10px] text-slate-500 mb-1">تلفن</label>
                   <input className="form-input" value={editCustomerPhone} onChange={(e) => setEditCustomerPhone(e.target.value)} dir="ltr" placeholder="—" />
                 </div>
-                <button className="btn btn-primary btn-sm" onClick={handleSaveCustomerInfo} disabled={savingName}>
-                  💾
-                </button>
               </div>
+              <div className="text-[10px] text-slate-600">این با دکمه‌ی «ذخیره تغییرات» پایین صفحه ثبت می‌شه.</div>
             </div>
             <div className="grid grid-cols-2 gap-2 rounded-lg p-3" style={{ background: "#0e1512" }}>
               <div><span className="text-slate-400">میز:</span> <span className="text-white">{selectedInvoice.tableName || "—"}</span></div>
@@ -1056,16 +1041,17 @@ export default function HistorySection() {
                   </div>
                 </div>
               )}
-
-              <button
-                className="btn btn-primary btn-full"
-                onClick={handleSavePaymentEdit}
-                disabled={savingEdit}
-              >
-                💾 ذخیره تغییرات پرداخت
-              </button>
             </div>
             )}
+
+            {/* یک دکمه‌ی ذخیره‌ی واحد برای همه‌ی تغییرات این پنجره (نام مشتری + پرداخت) */}
+            <button
+              className="btn btn-primary btn-full"
+              onClick={handleSavePaymentEdit}
+              disabled={savingEdit}
+            >
+              💾 ذخیره تغییرات
+            </button>
 
             <button
               className="btn btn-danger btn-full"

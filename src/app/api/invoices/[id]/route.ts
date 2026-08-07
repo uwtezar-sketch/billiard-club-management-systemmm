@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { invoices, invoiceItems, debts, debtors, invoiceShares } from "@/db/schema";
+import { invoices, invoiceItems, debts, invoiceShares } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { findOrCreateDebtor } from "@/lib/debtorLink";
+import { findOrCreateDebtor, recomputeDebtorTotal } from "@/lib/debtorLink";
 
 export async function GET(
   _req: NextRequest,
@@ -70,20 +70,17 @@ export async function PATCH(
         jalaaliDate: existing.jalaaliDate,
         isPaid: false,
       });
+      await recomputeDebtorTotal(finalDebtorId);
       updateData.status = "debt";
     } else if (paymentMethod !== undefined && !willBeDebt && wasDebt) {
       // خروج از بدهکاری (مثلاً مشتری الان بدهیش رو پرداخت کرده)
       const linkedDebts = await db.select().from(debts).where(eq(debts.invoiceId, existing.id));
+      const touchedDebtorIds = new Set<number>();
       for (const debt of linkedDebts) {
-        if (!debt.isPaid) {
-          const [debtor] = await db.select().from(debtors).where(eq(debtors.id, debt.debtorId));
-          if (debtor) {
-            const newTotal = Math.max(0, Number(debtor.totalDebt) - Number(debt.amount));
-            await db.update(debtors).set({ totalDebt: newTotal.toString() }).where(eq(debtors.id, debtor.id));
-          }
-        }
+        if (!debt.isPaid) touchedDebtorIds.add(debt.debtorId);
         await db.update(debts).set({ isPaid: true, paidAt: new Date() }).where(eq(debts.id, debt.id));
       }
+      for (const debtorId of touchedDebtorIds) await recomputeDebtorTotal(debtorId);
       if (status === undefined) updateData.status = "paid";
     }
 
@@ -114,16 +111,12 @@ export async function DELETE(
     if (!invoice) return NextResponse.json({ error: "فاکتور یافت نشد" }, { status: 404 });
 
     const linkedDebts = await db.select().from(debts).where(eq(debts.invoiceId, invoiceId));
+    const touchedDebtorIds = new Set<number>();
     for (const debt of linkedDebts) {
-      if (!debt.isPaid) {
-        const [debtor] = await db.select().from(debtors).where(eq(debtors.id, debt.debtorId));
-        if (debtor) {
-          const newTotal = Math.max(0, Number(debtor.totalDebt) - Number(debt.amount));
-          await db.update(debtors).set({ totalDebt: newTotal.toString() }).where(eq(debtors.id, debtor.id));
-        }
-      }
+      if (!debt.isPaid) touchedDebtorIds.add(debt.debtorId);
       await db.delete(debts).where(eq(debts.id, debt.id));
     }
+    for (const debtorId of touchedDebtorIds) await recomputeDebtorTotal(debtorId);
 
     await db.delete(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
     await db.delete(invoiceShares).where(eq(invoiceShares.invoiceId, invoiceId));

@@ -33,6 +33,10 @@ const EMPLOYEE_ALLOWED: { method: string; pattern: RegExp }[] = [
   { method: "POST", pattern: /^\/api\/debtors\/\d+\/merge$/ },
   { method: "GET", pattern: /^\/api\/debtors\/\d+\/payments$/ },
   { method: "POST", pattern: /^\/api\/debtors\/\d+\/payments$/ },
+  { method: "PATCH", pattern: /^\/api\/debtors\/\d+\/payments\/\d+$/ },
+  { method: "DELETE", pattern: /^\/api\/debtors\/\d+\/payments\/\d+$/ },
+  { method: "PATCH", pattern: /^\/api\/debts\/\d+$/ },
+  { method: "DELETE", pattern: /^\/api\/debts\/\d+$/ },
   // باشگاه مشتریان: دیدن/جستجو/افزودن برای همه باز است؛ ویرایش و حذف (PATCH/DELETE روی یک مشتری) هنوز فقط ادمین
   { method: "GET", pattern: /^\/api\/customers$/ },
   { method: "POST", pattern: /^\/api\/customers$/ },

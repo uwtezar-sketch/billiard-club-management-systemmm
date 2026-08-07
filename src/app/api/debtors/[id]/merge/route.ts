@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { debtors, debts, invoiceShares, customers } from "@/db/schema";
+import { debtors, debts, invoiceShares, customers, debtorPayments } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { recomputeDebtorTotal } from "@/lib/debtorLink";
 
 // POST /api/debtors/[id]/merge
 // body: { customerId?: number, targetDebtorId?: number } — دقیقاً یکی از این دو باید داده بشه
@@ -32,14 +33,13 @@ export async function POST(
 
       await db.update(debts).set({ debtorId: target.id }).where(eq(debts.debtorId, debtor.id));
       await db.update(invoiceShares).set({ debtorId: target.id }).where(eq(invoiceShares.debtorId, debtor.id));
+      await db.update(debtorPayments).set({ debtorId: target.id }).where(eq(debtorPayments.debtorId, debtor.id));
       await db
         .update(debtors)
-        .set({
-          totalDebt: (Number(target.totalDebt) + Number(debtor.totalDebt)).toString(),
-          customerId: target.customerId ?? debtor.customerId ?? null,
-        })
+        .set({ customerId: target.customerId ?? debtor.customerId ?? null })
         .where(eq(debtors.id, target.id));
       await db.delete(debtors).where(eq(debtors.id, debtor.id));
+      await recomputeDebtorTotal(target.id);
 
       return NextResponse.json({ merged: true, targetDebtorId: target.id });
     }
@@ -52,14 +52,12 @@ export async function POST(
       const otherLinked = existingLinked.find((d) => d.id !== debtor.id);
 
       if (otherLinked) {
-        // یک بدهکارِ دیگه از قبل به همین مشتری وصله → بدهی‌های این یکی رو منتقل کن و خودش حذف بشه
+        // یک بدهکارِ دیگه از قبل به همین مشتری وصله → بدهی‌ها و پرداخت‌های این یکی رو منتقل کن و خودش حذف بشه
         await db.update(debts).set({ debtorId: otherLinked.id }).where(eq(debts.debtorId, debtor.id));
         await db.update(invoiceShares).set({ debtorId: otherLinked.id }).where(eq(invoiceShares.debtorId, debtor.id));
-        await db
-          .update(debtors)
-          .set({ totalDebt: (Number(otherLinked.totalDebt) + Number(debtor.totalDebt)).toString() })
-          .where(eq(debtors.id, otherLinked.id));
+        await db.update(debtorPayments).set({ debtorId: otherLinked.id }).where(eq(debtorPayments.debtorId, debtor.id));
         await db.delete(debtors).where(eq(debtors.id, debtor.id));
+        await recomputeDebtorTotal(otherLinked.id);
         return NextResponse.json({ merged: true, targetDebtorId: otherLinked.id });
       }
 

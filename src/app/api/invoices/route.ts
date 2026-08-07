@@ -4,7 +4,7 @@ import { invoices, invoiceItems, sessions, tables, debts, cafeMenu, invoiceShare
 import { eq, desc, like, and, or, gte, lte, inArray } from "drizzle-orm";
 import { toJalaali, generateInvoiceNumber } from "@/lib/jalaali";
 import { verifySessionToken } from "@/lib/auth";
-import { findOrCreateDebtor } from "@/lib/debtorLink";
+import { findOrCreateDebtor, recomputeDebtorTotal } from "@/lib/debtorLink";
 
 export async function GET(req: NextRequest) {
   try {
@@ -228,6 +228,7 @@ export async function POST(req: NextRequest) {
         jalaaliDate,
         isPaid: false,
       });
+      await recomputeDebtorTotal(debtorId);
 
       // Update invoice status to debt
       await db
@@ -288,6 +289,8 @@ export async function POST(req: NextRequest) {
             .update(invoiceShares)
             .set({ debtorId: shareDebtorId })
             .where(eq(invoiceShares.id, insertedShare.id));
+
+          await recomputeDebtorTotal(shareDebtorId);
         }
       }
     }

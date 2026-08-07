@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { debtors, debts } from "@/db/schema";
+import { debtors, debts, debtorPayments } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { recomputeDebtorTotal } from "@/lib/debtorLink";
 
 // Add debt to debtor
 export async function POST(
@@ -29,14 +30,7 @@ export async function POST(
       })
       .returning();
 
-    // Update total debt
-    const [debtor] = await db.select().from(debtors).where(eq(debtors.id, debtorId));
-    if (debtor) {
-      await db
-        .update(debtors)
-        .set({ totalDebt: (Number(debtor.totalDebt) + Number(amount)).toString() })
-        .where(eq(debtors.id, debtorId));
-    }
+    await recomputeDebtorTotal(debtorId);
 
     return NextResponse.json(debt);
   } catch (e) {
@@ -56,46 +50,16 @@ export async function PATCH(
     const { name, phone, notes, settleAll, debtId } = body;
 
     if (settleAll) {
-      // Settle all debts
-      const unpaidDebts = await db
-        .select()
-        .from(debts)
-        .where(eq(debts.debtorId, debtorId));
-
-      const totalPaid = unpaidDebts
-        .filter((d) => !d.isPaid)
-        .reduce((sum, d) => sum + Number(d.amount), 0);
-
-      await db
-        .update(debts)
-        .set({ isPaid: true, paidAt: new Date() })
-        .where(eq(debts.debtorId, debtorId));
-
-      await db
-        .update(debtors)
-        .set({ totalDebt: "0" })
-        .where(eq(debtors.id, debtorId));
-
-      return NextResponse.json({ success: true, totalPaid });
+      await db.update(debts).set({ isPaid: true, paidAt: new Date() }).where(eq(debts.debtorId, debtorId));
+      const total = await recomputeDebtorTotal(debtorId);
+      return NextResponse.json({ success: true, totalDebt: total });
     }
 
     if (debtId) {
-      // Settle single debt
       const [debt] = await db.select().from(debts).where(eq(debts.id, debtId));
       if (debt && !debt.isPaid) {
-        await db
-          .update(debts)
-          .set({ isPaid: true, paidAt: new Date() })
-          .where(eq(debts.id, debtId));
-
-        const [debtor] = await db.select().from(debtors).where(eq(debtors.id, debtorId));
-        if (debtor) {
-          const newTotal = Math.max(0, Number(debtor.totalDebt) - Number(debt.amount));
-          await db
-            .update(debtors)
-            .set({ totalDebt: newTotal.toString() })
-            .where(eq(debtors.id, debtorId));
-        }
+        await db.update(debts).set({ isPaid: true, paidAt: new Date() }).where(eq(debts.id, debtId));
+        await recomputeDebtorTotal(debtorId);
       }
       return NextResponse.json({ success: true });
     }
@@ -126,6 +90,7 @@ export async function DELETE(
   try {
     const { id } = await params;
     await db.delete(debts).where(eq(debts.debtorId, parseInt(id)));
+    await db.delete(debtorPayments).where(eq(debtorPayments.debtorId, parseInt(id)));
     await db.delete(debtors).where(eq(debtors.id, parseInt(id)));
     return NextResponse.json({ success: true });
   } catch (e) {

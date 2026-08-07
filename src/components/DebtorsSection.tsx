@@ -85,6 +85,78 @@ export default function DebtorsSection() {
   const [paymentForm, setPaymentForm] = useState<Record<number, { amount: string; note: string }>>({});
   const [payingId, setPayingId] = useState<number | null>(null);
 
+  // ── ویرایش/حذف بدهی‌های ثبت‌شده و پرداخت‌های دستی (برای اصلاح اشتباهات) ──────
+  const [editDebtModal, setEditDebtModal] = useState<Debt | null>(null);
+  const [editDebtForm, setEditDebtForm] = useState({ amount: "", description: "" });
+  const [deleteDebtId, setDeleteDebtId] = useState<number | null>(null);
+  const [editPaymentModal, setEditPaymentModal] = useState<{ debtorId: number; payment: DebtorPayment } | null>(null);
+  const [editPaymentForm, setEditPaymentForm] = useState({ amount: "", note: "" });
+  const [deletePayment, setDeletePayment] = useState<{ debtorId: number; paymentId: number } | null>(null);
+
+  async function handleSaveDebtEdit() {
+    if (!editDebtModal) return;
+    const res = await fetch(`/api/debts/${editDebtModal.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: Number(editDebtForm.amount), description: editDebtForm.description }),
+    });
+    if (res.ok) {
+      showToast("بدهی ویرایش شد", "success");
+      setEditDebtModal(null);
+      fetchData();
+    } else {
+      showToast("خطا در ویرایش بدهی", "error");
+    }
+  }
+
+  async function handleDeleteDebt() {
+    if (!deleteDebtId) return;
+    const res = await fetch(`/api/debts/${deleteDebtId}`, { method: "DELETE" });
+    if (res.ok) {
+      showToast("بدهی حذف شد", "success");
+      setDeleteDebtId(null);
+      fetchData();
+    }
+  }
+
+  async function handleUndoSettleDebt(debtId: number) {
+    const res = await fetch(`/api/debts/${debtId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isPaid: false }),
+    });
+    if (res.ok) {
+      showToast("تسویه لغو شد و به «باز» برگشت", "success");
+      fetchData();
+    }
+  }
+
+  async function handleSavePaymentEdit() {
+    if (!editPaymentModal) return;
+    const res = await fetch(`/api/debtors/${editPaymentModal.debtorId}/payments/${editPaymentModal.payment.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: Number(editPaymentForm.amount), note: editPaymentForm.note }),
+    });
+    if (res.ok) {
+      showToast("پرداخت ویرایش شد", "success");
+      setEditPaymentModal(null);
+      fetchData();
+    } else {
+      showToast("خطا در ویرایش پرداخت", "error");
+    }
+  }
+
+  async function handleDeletePayment() {
+    if (!deletePayment) return;
+    const res = await fetch(`/api/debtors/${deletePayment.debtorId}/payments/${deletePayment.paymentId}`, { method: "DELETE" });
+    if (res.ok) {
+      showToast("پرداخت حذف شد", "success");
+      setDeletePayment(null);
+      fetchData();
+    }
+  }
+
   async function handleRecordPayment(debtorId: number) {
     const form = paymentForm[debtorId];
     const amount = Number(form?.amount || 0);
@@ -297,7 +369,8 @@ export default function DebtorsSection() {
   const enriched = debtors
     .map((d) => {
       const unpaidDebts = d.debts.filter((x) => !x.isPaid);
-      const unpaidTotal = unpaidDebts.reduce((s, x) => s + Number(x.amount), 0);
+      // مبلغ نهایی رو از totalDebt سرور می‌خونیم (نه جمع سطری اینجا) چون پرداخت‌های دستی هم ازش کم شدن
+      const unpaidTotal = Number(d.totalDebt);
       const oldestDays = unpaidDebts.length > 0 ? Math.max(...unpaidDebts.map((x) => daysSince(x.createdAt))) : 0;
       return { debtor: d, unpaidDebts, unpaidTotal, oldestDays, isOverdue: oldestDays >= OVERDUE_DAYS };
     })
@@ -478,6 +551,28 @@ export default function DebtorsSection() {
                                   ✅ تسویه
                                 </button>
                               )}
+                              {debt.isPaid && (
+                                <button
+                                  className="btn btn-secondary btn-sm text-xs"
+                                  onClick={() => handleUndoSettleDebt(debt.id)}
+                                  title="اگه اشتباهی تسویه زدی"
+                                >
+                                  ↩️ برگردون
+                                </button>
+                              )}
+                              <button
+                                className="btn btn-secondary btn-sm text-xs"
+                                onClick={() => { setEditDebtForm({ amount: debt.amount, description: debt.description || "" }); setEditDebtModal(debt); }}
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                className="btn btn-secondary btn-sm text-xs"
+                                style={{ color: "#f27f8a" }}
+                                onClick={() => setDeleteDebtId(debt.id)}
+                              >
+                                🗑️
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -528,7 +623,22 @@ export default function DebtorsSection() {
                                 <div className="text-slate-300">{toJalaaliFullLabel(new Date(pmt.createdAt))}</div>
                                 {pmt.note && <div className="text-slate-500 mt-0.5">📝 {pmt.note}</div>}
                               </div>
-                              <span className="font-bold" style={{ color: "#5ee89b" }}>{formatPrice(Number(pmt.amount))}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold" style={{ color: "#5ee89b" }}>{formatPrice(Number(pmt.amount))}</span>
+                                <button
+                                  className="text-slate-400 px-1"
+                                  onClick={() => { setEditPaymentForm({ amount: pmt.amount, note: pmt.note || "" }); setEditPaymentModal({ debtorId: debtor.id, payment: pmt }); }}
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  className="px-1"
+                                  style={{ color: "#f27f8a" }}
+                                  onClick={() => setDeletePayment({ debtorId: debtor.id, paymentId: pmt.id })}
+                                >
+                                  🗑️
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -727,6 +837,52 @@ export default function DebtorsSection() {
           )}
         </div>
       </Modal>
+
+      {/* Edit Debt Modal */}
+      <Modal open={!!editDebtModal} onClose={() => setEditDebtModal(null)} title="ویرایش بدهی">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">مبلغ</label>
+            <input className="form-input" type="number" dir="ltr" value={editDebtForm.amount} onChange={(e) => setEditDebtForm((p) => ({ ...p, amount: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">توضیح</label>
+            <input className="form-input" value={editDebtForm.description} onChange={(e) => setEditDebtForm((p) => ({ ...p, description: e.target.value }))} />
+          </div>
+          <button className="btn btn-primary btn-full" onClick={handleSaveDebtEdit}>💾 ذخیره</button>
+        </div>
+      </Modal>
+
+      {/* Edit Payment Modal */}
+      <Modal open={!!editPaymentModal} onClose={() => setEditPaymentModal(null)} title="ویرایش پرداخت">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">مبلغ پرداختی</label>
+            <input className="form-input" type="number" dir="ltr" value={editPaymentForm.amount} onChange={(e) => setEditPaymentForm((p) => ({ ...p, amount: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">توضیح</label>
+            <input className="form-input" value={editPaymentForm.note} onChange={(e) => setEditPaymentForm((p) => ({ ...p, note: e.target.value }))} />
+          </div>
+          <button className="btn btn-primary btn-full" onClick={handleSavePaymentEdit}>💾 ذخیره</button>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleteDebtId}
+        message="این ردیف بدهی کلاً حذف بشه؟ (مثلاً اگه اشتباهی ثبت شده بود)"
+        onConfirm={handleDeleteDebt}
+        onCancel={() => setDeleteDebtId(null)}
+        danger
+      />
+
+      <ConfirmDialog
+        open={!!deletePayment}
+        message="این پرداخت حذف بشه؟ مبلغش دوباره به بدهی مشتری برمی‌گرده."
+        onConfirm={handleDeletePayment}
+        onCancel={() => setDeletePayment(null)}
+        danger
+      />
 
       {/* Duplicate debtor warning */}
       <ConfirmDialog

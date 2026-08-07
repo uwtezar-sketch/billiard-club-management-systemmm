@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { invoices, invoiceShares, debts, debtors } from "@/db/schema";
+import { invoices, invoiceShares, debts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { findOrCreateDebtor } from "@/lib/debtorLink";
+import { findOrCreateDebtor, recomputeDebtorTotal } from "@/lib/debtorLink";
 
 // PATCH /api/invoices/[id]/shares/[shareId]
 // تسویه یا تغییر وضعیت یک سهم مشخص از یک فاکتور تقسیم‌شده
@@ -63,19 +63,16 @@ export async function PATCH(
       });
       updateData.paymentMethod = "debt";
       updateData.debtorId = finalDebtorId;
+      await recomputeDebtorTotal(finalDebtorId);
     } else if (!willBeDebt && wasDebt) {
       // بدهیِ این سهم تسویه شد (یا لغو شد)
       const linkedDebts = await db.select().from(debts).where(eq(debts.shareId, share.id));
+      const touchedDebtorIds = new Set<number>();
       for (const debt of linkedDebts) {
-        if (!debt.isPaid) {
-          const [debtor] = await db.select().from(debtors).where(eq(debtors.id, debt.debtorId));
-          if (debtor) {
-            const newTotal = Math.max(0, Number(debtor.totalDebt) - Number(debt.amount));
-            await db.update(debtors).set({ totalDebt: newTotal.toString() }).where(eq(debtors.id, debtor.id));
-          }
-        }
+        if (!debt.isPaid) touchedDebtorIds.add(debt.debtorId);
         await db.update(debts).set({ isPaid: true, paidAt: new Date() }).where(eq(debts.id, debt.id));
       }
+      for (const debtorId of touchedDebtorIds) await recomputeDebtorTotal(debtorId);
     }
 
     const [updatedShare] = await db
