@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { invoices, debts, invoiceShares } from "@/db/schema";
+import { invoices, debts, invoiceShares, debtorPayments } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { todayJalaali } from "@/lib/jalaali";
 import * as jalaali from "jalaali-js";
@@ -47,9 +47,15 @@ async function computeRevenueForDate(date: string) {
   const sharesByInvoice = await getSharesMap(splitIds);
 
   const allPaidDebts = await db.select().from(debts).where(eq(debts.isPaid, true));
-  const debtCollected = allPaidDebts
+  const debtCollectedFromSettled = allPaidDebts
     .filter((d) => d.paidAt && tehranJalaliOf(new Date(d.paidAt)) === date)
     .reduce((sum, d) => sum + Number(d.amount), 0);
+
+  // پرداخت‌های دستیِ جزئی (از بخش بدهکاران) هم پول واقعیه که همون روز وصول شده — باید حساب بشه
+  const dayPayments = await db.select().from(debtorPayments).where(eq(debtorPayments.jalaaliDate, date));
+  const debtCollectedFromManualPayments = dayPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+
+  const debtCollected = debtCollectedFromSettled + debtCollectedFromManualPayments;
 
   // درآمد واقعی = فقط سهمِ «پرداخت‌شده»ی هر فاکتور (چه عادی چه تقسیم‌شده) + بدهی‌هایی که همین امروز وصول شدن
   const paidAmountOf = (inv: (typeof dayInvoices)[number]) =>

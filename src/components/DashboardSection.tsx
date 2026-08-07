@@ -33,6 +33,7 @@ interface DailyPoint {
   date: string;
   tableRevenue: number;
   cafeRevenue: number;
+  debtCollected: number;
   revenue: number;
   debtCreated: number;
   pendingAmount: number;
@@ -58,6 +59,7 @@ interface Analytics {
   totalRevenue: number;
   totalTableRevenue: number;
   totalCafeRevenue: number;
+  totalDebtCollected: number;
   totalDebtCreated: number;
   totalPendingAmount: number;
   totalInvoices: number;
@@ -215,8 +217,12 @@ export default function DashboardSection() {
               </div>
             </div>
 
-            {/* بدهی و در انتظار — جدا از درآمد واقعی */}
-            <div className="grid grid-cols-2 gap-2 mb-3">
+            {/* بدهی، وصولی و در انتظار — جدا از فروش تازه */}
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              <div className="rounded-lg p-2 text-center" style={{ background: "#0d3b2622", border: "1px solid #1a7a4c55" }}>
+                <div className="text-[10px]" style={{ color: "#5ee89b" }}>بدهیِ وصول‌شده این بازه</div>
+                <div className="text-sm font-bold mt-1" style={{ color: "#5ee89b" }}>{formatPrice(analytics.totalDebtCollected)}</div>
+              </div>
               <div className="rounded-lg p-2 text-center" style={{ background: "#3d101633", border: "1px solid #8f1d2c" }}>
                 <div className="text-[10px] text-red-300">بدهیِ جدید این بازه</div>
                 <div className="text-sm font-bold mt-1" style={{ color: "#f27f8a" }}>{formatPrice(analytics.totalDebtCreated)}</div>
@@ -241,6 +247,7 @@ export default function DashboardSection() {
               {analytics.daily.map((d) => {
                 const totalPct = Math.max(4, Math.round((d.revenue / maxDailyRevenue) * 100));
                 const cafePct = d.revenue > 0 ? Math.round((d.cafeRevenue / d.revenue) * 100) : 0;
+                const debtPct = d.revenue > 0 ? Math.round((d.debtCollected / d.revenue) * 100) : 0;
                 const isMax = d.revenue === maxDailyRevenue && d.revenue > 0;
                 const isSelected = selectedDay?.date === d.date;
                 return (
@@ -255,6 +262,9 @@ export default function DashboardSection() {
                     >
                       {cafePct > 0 && (
                         <div className="w-full bg-amber-500" style={{ height: `${cafePct}%` }} />
+                      )}
+                      {debtPct > 0 && (
+                        <div className="w-full bg-emerald-500" style={{ height: `${debtPct}%` }} />
                       )}
                       <div
                         className={`w-full flex-1 ${isMax ? "bg-green-400" : d.isWeekend ? "bg-purple-500" : "bg-blue-600"}`}
@@ -274,6 +284,9 @@ export default function DashboardSection() {
                 <div className="font-bold text-white mb-1">{selectedDay.date} ({selectedDay.weekday})</div>
                 <div className="flex justify-between text-slate-300"><span>💵 درآمد میز:</span><span>{formatPrice(selectedDay.tableRevenue)}</span></div>
                 <div className="flex justify-between text-slate-300"><span>☕ درآمد کافه:</span><span>{formatPrice(selectedDay.cafeRevenue)}</span></div>
+                {selectedDay.debtCollected > 0 && (
+                  <div className="flex justify-between" style={{ color: "#5ee89b" }}><span>💰 بدهیِ وصول‌شده:</span><span>{formatPrice(selectedDay.debtCollected)}</span></div>
+                )}
                 <div className="flex justify-between text-white font-bold"><span>جمع درآمد واقعی:</span><span>{formatPrice(selectedDay.revenue)}</span></div>
                 {selectedDay.debtCreated > 0 && (
                   <div className="flex justify-between mt-1" style={{ color: "#f27f8a" }}><span>📋 بدهی جدید:</span><span>{formatPrice(selectedDay.debtCreated)}</span></div>
@@ -288,6 +301,7 @@ export default function DashboardSection() {
             <div className="flex items-center justify-center gap-3 mt-3 text-[10px] text-slate-500 flex-wrap">
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-600 inline-block" /> میز</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> کافه</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> بدهیِ وصول‌شده</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500 inline-block" /> جمعه</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400 inline-block" /> پرفروش‌ترین</span>
             </div>
