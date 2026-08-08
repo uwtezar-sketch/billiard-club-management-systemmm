@@ -65,6 +65,10 @@ interface Settings {
   snooker_price?: string;
   eightball_price?: string;
   playstation_price?: string;
+  offpeak_enabled?: string;
+  offpeak_start_hour?: string;
+  offpeak_end_hour?: string;
+  offpeak_discount_percent?: string;
 }
 
 interface Reservation {
@@ -238,10 +242,23 @@ const [loading, setLoading] = useState(true);
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  function isOffPeakNow(): boolean {
+    if (settings.offpeak_enabled !== "true") return false;
+    const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Tehran", hour: "2-digit", hour12: false }).format(new Date())) % 24;
+    const start = Number(settings.offpeak_start_hour ?? 15);
+    const end = Number(settings.offpeak_end_hour ?? 20);
+    if (start <= end) return hour >= start && hour < end;
+    return hour >= start || hour < end; // برای بازه‌ای که از نیمه‌شب رد بشه
+  }
+
   function getDefaultPrice(type: string) {
-    if (type === "snooker") return Number(settings.snooker_price || 150000);
-    if (type === "eightball") return Number(settings.eightball_price || 100000);
-    return Number(settings.playstation_price || 80000);
+    const base =
+      type === "snooker" ? Number(settings.snooker_price || 150000) : type === "eightball" ? Number(settings.eightball_price || 100000) : Number(settings.playstation_price || 80000);
+    if (isOffPeakNow()) {
+      const pct = Number(settings.offpeak_discount_percent || 0);
+      return Math.round((base * (1 - pct / 100)) / 1000) * 1000;
+    }
+    return base;
   }
 
   function openStartModal(table: Table) {
@@ -575,6 +592,11 @@ const [loading, setLoading] = useState(true);
           {fillingReservationId && (
             <div className="rounded-lg px-3 py-2 text-xs" style={{ background: "#3a2a0c33", border: "1px solid #c9971f", color: "#e0b23a" }}>
               📅 اطلاعات از رزرو امروز پر شد
+            </div>
+          )}
+          {startModal.table && isOffPeakNow() && (
+            <div className="rounded-lg px-3 py-2 text-xs" style={{ background: "#12302433", border: "1px solid #2f6b4f", color: "#5ee89b" }}>
+              🌙 الان تو بازه‌ی کم‌رونقه — قیمت {settings.offpeak_discount_percent}٪ تخفیف خورد (قابل ویرایش)
             </div>
           )}
           <div>

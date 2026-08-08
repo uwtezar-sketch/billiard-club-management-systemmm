@@ -1,0 +1,28 @@
+import { db } from "@/db";
+import { customerPointRedemptions, settings } from "@/db/schema";
+import { eq } from "drizzle-orm";
+
+const DEFAULT_POINT_VALUE = 10000; // پیش‌فرض: هر ۱۰٬۰۰۰ تومان واقعاً پرداخت‌شده = ۱ امتیاز
+
+export async function getPointValue(): Promise<number> {
+  const [row] = await db.select().from(settings).where(eq(settings.key, "loyalty_point_value"));
+  const val = row ? Number(row.value) : DEFAULT_POINT_VALUE;
+  return val > 0 ? val : DEFAULT_POINT_VALUE;
+}
+
+// امتیازِ کسب‌شده همیشه از رویِ totalPaid (مجموع واقعاً پرداخت‌شده) حساب می‌شه، نه از یک ستونِ ذخیره‌شده —
+// این‌جوری با ویرایش/حذفِ فاکتورهای قدیمی هم عدد همیشه درست می‌مونه (مثل منطق بدهکارها).
+export function calcEarnedPoints(totalPaid: number, pointValue: number): number {
+  return Math.floor(totalPaid / pointValue);
+}
+
+export async function getRedeemedPoints(customerId: number): Promise<number> {
+  const rows = await db.select().from(customerPointRedemptions).where(eq(customerPointRedemptions.customerId, customerId));
+  return rows.reduce((s, r) => s + r.points, 0);
+}
+
+export async function getAvailablePoints(customerId: number, totalPaid: number, pointValue: number): Promise<number> {
+  const earned = calcEarnedPoints(totalPaid, pointValue);
+  const redeemed = await getRedeemedPoints(customerId);
+  return Math.max(0, earned - redeemed);
+}

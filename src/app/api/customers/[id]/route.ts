@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { customers, invoices, invoiceItems, invoiceShares, debtors, debts } from "@/db/schema";
+import { customers, invoices, invoiceItems, invoiceShares, debtors, debts, customerPointRedemptions } from "@/db/schema";
 import { eq, inArray, and } from "drizzle-orm";
 import { isSamePerson } from "@/lib/personMatch";
+import { getPointValue, calcEarnedPoints, getRedeemedPoints } from "@/lib/loyalty";
 
 const CHRONIC_DEBT_DAYS = 15;
 const GOOD_CUSTOMER_MIN_VISITS = 3;
@@ -127,6 +128,11 @@ export async function GET(
     else if (visitCount >= GOOD_CUSTOMER_MIN_VISITS) tier = "good";
     else tier = "new";
 
+    const pointValue = await getPointValue();
+    const earnedPoints = calcEarnedPoints(totalPaid, pointValue);
+    const redeemedPoints = await getRedeemedPoints(customer.id);
+    const loyaltyPoints = Math.max(0, earnedPoints - redeemedPoints);
+
     return NextResponse.json({
       ...customer,
       visitCount,
@@ -141,6 +147,8 @@ export async function GET(
       history,
       oldestUnpaidDebtDays,
       tier,
+      loyaltyPoints,
+      pointValue,
     });
   } catch (e) {
     console.error(e);

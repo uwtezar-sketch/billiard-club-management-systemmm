@@ -54,6 +54,16 @@ interface PeakCell {
   count: number;
 }
 
+interface TableProfitStat {
+  tableId: number | null;
+  tableName: string;
+  tableType: string | null;
+  revenue: number;
+  sessionCount: number;
+  avgRevenuePerSession: number;
+  avgDurationMinutes: number;
+}
+
 interface Analytics {
   daily: DailyPoint[];
   totalRevenue: number;
@@ -73,6 +83,7 @@ interface Analytics {
   dayLabels: string[];
   blockLabels: string[];
   peakCells: Record<string, PeakCell>;
+  tableStats: TableProfitStat[];
 }
 
 const TYPE_TABS: { id: string; label: string }[] = [
@@ -458,16 +469,39 @@ export default function DashboardSection() {
               );
             })}
           </div>
-          <div className="rounded-lg p-3 mt-3 text-xs leading-6" style={{ background: "#0e1512" }}>
-            <div className="text-slate-300 mb-1">💡 چند ایده برای پُرکردن این ساعت‌ها:</div>
-            <ul className="text-slate-400 space-y-1 pr-4" style={{ listStyle: "disc" }}>
-              <li>تخفیف «پیش از ساعت ۸» روی قیمت میز (مثلاً ۲۰-۳۰٪) برای کسایی که زودتر بیان</li>
-              <li>کمبوی کافه+میز مخصوص بعدازظهر با قیمت ثابت و جذاب‌تر از شب</li>
-              <li>تبلیغ به‌عنوان مکان خنک برای فرار از گرمای بعدازظهر کیش (خصوصاً برای گردشگرا)</li>
-              <li>تورنمنت هفتگی بعدازظهر (اسنوکر/ایت‌بال) با جایزه‌ی کوچیک، برای عادت‌دادن مشتری‌های ثابت</li>
-              <li>پیام/تماس با مشتری‌های خوش‌حساب و ثابت باشگاه، برای دعوت به بازدید زودتر با تخفیف ویژه</li>
-              <li>هماهنگی با هتل‌ها/تور گردانان کیش برای فرستادن گردشگرا تو بعدازظهر</li>
-            </ul>
+        </div>
+      )}
+
+      {/* Table Profitability (سودآوری هر میز/دستگاه) */}
+      {analytics && analytics.tableStats.length > 0 && (
+        <div className="card">
+          <h3 className="font-bold mb-1 text-slate-300">🎯 سودآوری هر میز/دستگاه</h3>
+          <div className="text-xs text-slate-500 mb-3">درآمد واقعاً پرداخت‌شده، طی بازه‌ی انتخاب‌شده</div>
+          <div className="space-y-2">
+            {analytics.tableStats.map((t) => {
+              const maxRevenue = Math.max(...analytics.tableStats.map((x) => x.revenue), 1);
+              const pct = Math.max(6, Math.round((t.revenue / maxRevenue) * 100));
+              return (
+                <div key={`${t.tableId}-${t.tableName}`}>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-white font-medium">
+                      {t.tableType === "snooker" ? "🎱" : t.tableType === "eightball" ? "🎳" : "🎮"} {t.tableName}
+                    </span>
+                    <span className="text-slate-400">
+                      {t.sessionCount.toLocaleString("fa-IR")} جلسه — میانگین {formatDuration(t.avgDurationMinutes)}
+                    </span>
+                  </div>
+                  <div className="rounded-full overflow-hidden" style={{ background: "#0e1512", height: "18px" }}>
+                    <div
+                      className="h-full rounded-full flex items-center px-2"
+                      style={{ width: `${pct}%`, background: "#2563eb" }}
+                    >
+                      <span className="text-[10px] font-bold text-white">{formatPrice(t.revenue)}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

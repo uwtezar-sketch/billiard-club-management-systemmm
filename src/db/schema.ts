@@ -228,3 +228,16 @@ export const customers = pgTable("customers", {
   isVip: boolean("is_vip").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+// امتیاز وفاداری هیچ‌وقت مستقیم ذخیره نمی‌شه — همیشه از رویِ «مجموع واقعاً پرداخت‌شده ÷ ارزش هر امتیاز»
+// محاسبه می‌شه (مثل بدهکارها) تا با ویرایش فاکتورهای قدیمی هم همیشه درست بمونه.
+// این جدول فقط استفاده‌های امتیاز (redemption) رو نگه می‌داره؛ باقی‌مونده = امتیازِ محاسبه‌شده منهای جمعِ این جدول.
+export const customerPointRedemptions = pgTable("customer_point_redemptions", {
+  id: serial("id").primaryKey(),
+  customerId: integer("customer_id").notNull().references(() => customers.id),
+  points: integer("points").notNull(),
+  note: text("note"),
+  byUsername: text("by_username"),
+  jalaaliDate: text("jalaali_date"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});

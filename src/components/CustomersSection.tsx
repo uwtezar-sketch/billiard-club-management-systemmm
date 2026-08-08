@@ -22,6 +22,7 @@ interface Customer {
   daysSinceVisit: number | null;
   oldestUnpaidDebtDays: number | null;
   tier: "good" | "watch" | "bad" | "new";
+  loyaltyPoints: number;
 }
 
 interface HistoryEntry {
@@ -44,6 +45,7 @@ interface CustomerDetail extends Customer {
   favoriteType: string | null;
   favoriteCafeItems: { name: string; quantity: number }[];
   history: HistoryEntry[];
+  pointValue: number;
 }
 
 interface Suggestion {
@@ -96,6 +98,10 @@ export default function CustomersSection() {
 
   const [form, setForm] = useState({ name: "", phone: "", notes: "", isVip: false });
   const [showInsights, setShowInsights] = useState(true);
+  const [redeemModal, setRedeemModal] = useState(false);
+  const [redeemPoints, setRedeemPoints] = useState("");
+  const [redeemNote, setRedeemNote] = useState("");
+  const [redeemLoading, setRedeemLoading] = useState(false);
 
   const fetchCustomers = useCallback(async () => {
     try {
@@ -213,6 +219,36 @@ export default function CustomersSection() {
     fetchSuggestions();
   }
 
+  async function handleRedeemPoints() {
+    if (!detail) return;
+    const points = Number(redeemPoints);
+    if (!points || points <= 0) {
+      showToast("تعداد امتیاز نامعتبره", "error");
+      return;
+    }
+    setRedeemLoading(true);
+    try {
+      const res = await fetch(`/api/customers/${detail.id}/points`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ points, note: redeemNote || undefined }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(data.error || "خطا در ثبت استفاده از امتیاز", "error");
+        return;
+      }
+      showToast("امتیاز استفاده شد", "success");
+      setRedeemModal(false);
+      setRedeemPoints("");
+      setRedeemNote("");
+      openDetail(detail.id);
+      fetchCustomers();
+    } finally {
+      setRedeemLoading(false);
+    }
+  }
+
   const showInsightsPanel = !debouncedSearch && customers.length >= 3;
   const topProfitable = [...customers].sort((a, b) => b.totalPaid - a.totalPaid).slice(0, 5);
   const discountCandidates = customers
@@ -222,11 +258,15 @@ export default function CustomersSection() {
   const chronicDebtors = customers
     .filter((c) => c.tier === "bad")
     .sort((a, b) => (b.oldestUnpaidDebtDays || 0) - (a.oldestUnpaidDebtDays || 0));
+  const absentGoodCustomers = customers
+    .filter((c) => c.tier === "good" && c.daysSinceVisit !== null && c.daysSinceVisit >= INACTIVE_DAYS)
+    .sort((a, b) => (b.daysSinceVisit || 0) - (a.daysSinceVisit || 0))
+    .slice(0, 8);
 
   return (
     <div className="space-y-4">
       {/* Insights: پرسودترین‌ها، کاندید تخفیف، بدحساب‌های مزمن */}
-      {showInsightsPanel && (topProfitable.length > 0 || discountCandidates.length > 0 || chronicDebtors.length > 0) && (
+      {showInsightsPanel && (topProfitable.length > 0 || discountCandidates.length > 0 || chronicDebtors.length > 0 || absentGoodCustomers.length > 0) && (
         <div className="card" style={{ borderColor: "#2f6b4f" }}>
           <button className="flex items-center justify-between w-full" onClick={() => setShowInsights((v) => !v)}>
             <h3 className="font-bold" style={{ color: "#5ee89b" }}>📈 تحلیل سوددهی مشتریان</h3>
@@ -270,6 +310,22 @@ export default function CustomersSection() {
                         <span className="text-xs font-bold" style={{ color: "#f27f8a" }}>
                           {formatPrice(c.outstandingDebt)} — {c.oldestUnpaidDebtDays?.toLocaleString("fa-IR")} روز
                         </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {absentGoodCustomers.length > 0 && (
+                <div>
+                  <div className="text-xs text-slate-400 mb-2">🔔 خوش‌حساب‌هایی که مدتیه نیومدن — برای تماس/پیام یادآوری</div>
+                  <div className="space-y-1">
+                    {absentGoodCustomers.map((c) => (
+                      <div key={c.id} className="flex items-center justify-between rounded-lg px-3 py-1.5 cursor-pointer" style={{ background: "#0e1512" }} onClick={() => openDetail(c.id)}>
+                        <div>
+                          <span className="text-white text-sm">{c.name}</span>
+                          <a href={`tel:${c.phone}`} onClick={(e) => e.stopPropagation()} className="text-xs mr-2" style={{ color: "#5ecfe0" }} dir="ltr">{c.phone}</a>
+                        </div>
+                        <span className="text-xs" style={{ color: "#8a9488" }}>{c.daysSinceVisit?.toLocaleString("fa-IR")} روز غایب</span>
                       </div>
                     ))}
                   </div>
@@ -482,6 +538,20 @@ export default function CustomersSection() {
               </div>
             </div>
 
+            <div className="flex items-center justify-between rounded-lg p-3" style={{ background: "#123024", border: "1px solid #2f6b4f" }}>
+              <div>
+                <div className="text-sm font-bold" style={{ color: "#5ee89b" }}>🎁 {detail.loyaltyPoints.toLocaleString("fa-IR")} امتیاز</div>
+                <div className="text-[10px] text-slate-500">هر {formatPrice(detail.pointValue)} پرداخت‌شده = ۱ امتیاز</div>
+              </div>
+              <button
+                className="btn btn-secondary btn-sm"
+                disabled={detail.loyaltyPoints <= 0}
+                onClick={() => { setRedeemPoints(""); setRedeemNote(""); setRedeemModal(true); }}
+              >
+                استفاده از امتیاز
+              </button>
+            </div>
+
             {detail.favoriteType && (
               <div className="text-slate-300">
                 میز موردعلاقه: <span className="text-white font-bold">{TYPE_LABELS[detail.favoriteType] || detail.favoriteType}</span>
@@ -533,6 +603,39 @@ export default function CustomersSection() {
             </button>
           </div>
         ) : null}
+      </Modal>
+
+      {/* Redeem Points Modal */}
+      <Modal open={redeemModal} onClose={() => setRedeemModal(false)} title="استفاده از امتیاز">
+        <div className="space-y-4">
+          {detail && (
+            <div className="text-xs text-slate-400">موجودی فعلی: <span className="text-white font-bold">{detail.loyaltyPoints.toLocaleString("fa-IR")}</span> امتیاز</div>
+          )}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">تعداد امتیازِ استفاده‌شده</label>
+            <input
+              className="form-input"
+              type="number"
+              dir="ltr"
+              value={redeemPoints}
+              onChange={(e) => setRedeemPoints(e.target.value)}
+              placeholder="مثلاً ۵"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">بابت چی؟ (اختیاری)</label>
+            <input
+              className="form-input"
+              value={redeemNote}
+              onChange={(e) => setRedeemNote(e.target.value)}
+              placeholder="مثلاً یک ساعت رایگان اسنوکر"
+            />
+          </div>
+          <div className="flex gap-3">
+            <button className="btn btn-secondary flex-1" onClick={() => setRedeemModal(false)}>انصراف</button>
+            <button className="btn btn-primary flex-1" onClick={handleRedeemPoints} disabled={redeemLoading}>ثبت</button>
+          </div>
+        </div>
       </Modal>
 
       <ConfirmDialog

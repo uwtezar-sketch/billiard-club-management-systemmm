@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { customers, invoices, invoiceShares, debtors, debts } from "@/db/schema";
+import { customers, invoices, invoiceShares, debtors, debts, customerPointRedemptions } from "@/db/schema";
 import { like, or, inArray, eq } from "drizzle-orm";
 import { normalizePhone } from "@/lib/phone";
 import { normalizeName, isSamePerson } from "@/lib/personMatch";
+import { getPointValue, calcEarnedPoints } from "@/lib/loyalty";
 
 // یک بدهیِ بازِ ≥ این تعداد روز → «بدهکار مزمن» حساب می‌شه
 const CHRONIC_DEBT_DAYS = 15;
@@ -29,6 +30,12 @@ export async function GET(req: NextRequest) {
       : [];
     const allDebtors = await db.select().from(debtors);
     const unpaidDebts = await db.select().from(debts).where(eq(debts.isPaid, false));
+    const allRedemptions = await db.select().from(customerPointRedemptions);
+    const redeemedByCustomer = new Map<number, number>();
+    for (const r of allRedemptions) {
+      redeemedByCustomer.set(r.customerId, (redeemedByCustomer.get(r.customerId) || 0) + r.points);
+    }
+    const pointValue = await getPointValue();
     const invoiceById = new Map(allInvoices.map((i) => [i.id, i]));
 
     const result = allCustomers.map((c) => {
@@ -95,6 +102,9 @@ export async function GET(req: NextRequest) {
       else if (visitCount >= GOOD_CUSTOMER_MIN_VISITS) tier = "good";
       else tier = "new";
 
+      const earnedPoints = calcEarnedPoints(totalPaid, pointValue);
+      const loyaltyPoints = Math.max(0, earnedPoints - (redeemedByCustomer.get(c.id) || 0));
+
       return {
         ...c,
         visitCount,
@@ -107,6 +117,7 @@ export async function GET(req: NextRequest) {
         daysSinceVisit,
         oldestUnpaidDebtDays,
         tier,
+        loyaltyPoints,
       };
     });
 

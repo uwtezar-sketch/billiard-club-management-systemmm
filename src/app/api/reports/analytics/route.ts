@@ -206,6 +206,31 @@ export async function GET(req: NextRequest) {
       leastCafeItems = [...all].sort((a, b) => a.quantity - b.quantity).slice(0, 5);
     }
 
+    // ── سودآوریِ هر میز/دستگاه — کدوم میزا بیشترین درآمدِ واقعی رو تو این بازه آوردن ─────
+    type TableAgg = { tableId: number | null; tableName: string; tableType: string | null; revenue: number; count: number; totalMinutes: number };
+    const tableMap = new Map<string, TableAgg>();
+    for (const inv of recentInvoices) {
+      const key = inv.tableId ? `id:${inv.tableId}` : `name:${inv.tableName || "نامشخص"}`;
+      const { paid } = invoiceRatios(inv, sharesByInvoice, inv.id);
+      const revenue = Number(inv.totalAmount) * paid;
+      const cur = tableMap.get(key) || { tableId: inv.tableId, tableName: inv.tableName || "نامشخص", tableType: inv.tableType, revenue: 0, count: 0, totalMinutes: 0 };
+      cur.revenue += revenue;
+      cur.count += 1;
+      cur.totalMinutes += inv.durationMinutes || 0;
+      tableMap.set(key, cur);
+    }
+    const tableStats = [...tableMap.values()]
+      .map((t) => ({
+        tableId: t.tableId,
+        tableName: t.tableName,
+        tableType: t.tableType,
+        revenue: Math.round(t.revenue),
+        sessionCount: t.count,
+        avgRevenuePerSession: t.count > 0 ? Math.round(t.revenue / t.count) : 0,
+        avgDurationMinutes: t.count > 0 ? Math.round(t.totalMinutes / t.count) : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
     return NextResponse.json({
       daily,
       totalRevenue,
@@ -225,6 +250,7 @@ export async function GET(req: NextRequest) {
       dayLabels: DAY_LABELS,
       blockLabels: BLOCK_LABELS,
       peakCells,
+      tableStats,
     });
   } catch (e) {
     console.error(e);

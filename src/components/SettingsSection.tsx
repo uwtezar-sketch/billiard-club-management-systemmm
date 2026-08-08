@@ -25,6 +25,11 @@ export default function SettingsSection() {
     snooker_price: "150000",
     eightball_price: "100000",
     playstation_price: "80000",
+    loyalty_point_value: "10000",
+    offpeak_enabled: "false",
+    offpeak_start_hour: "15",
+    offpeak_end_hour: "20",
+    offpeak_discount_percent: "20",
   });
   const [menuItems, setMenuItems] = useState<CafeMenuItem[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
@@ -49,6 +54,11 @@ export default function SettingsSection() {
       snooker_price: s.snooker_price || "150000",
       eightball_price: s.eightball_price || "100000",
       playstation_price: s.playstation_price || "80000",
+      loyalty_point_value: s.loyalty_point_value || "10000",
+      offpeak_enabled: s.offpeak_enabled || "false",
+      offpeak_start_hour: s.offpeak_start_hour || "15",
+      offpeak_end_hour: s.offpeak_end_hour || "20",
+      offpeak_discount_percent: s.offpeak_discount_percent || "20",
     });
     const m = await menuRes.json();
     setMenuItems(Array.isArray(m) ? m : []);
@@ -177,6 +187,86 @@ export default function SettingsSection() {
             disabled={savingPrices}
           >
             {savingPrices ? "در حال ذخیره..." : "💾 ذخیره قیمت‌ها"}
+          </button>
+        </div>
+      </div>
+
+      {/* Off-peak Dynamic Pricing */}
+      <div className="card" style={{ borderColor: "#2f6b4f" }}>
+        <h2 className="text-lg font-bold text-white mb-1">🌙 تخفیف ساعات کم‌رونق</h2>
+        <div className="text-xs text-slate-500 mb-4">
+          وقتی فعال باشه، تو مودالِ «شروع میز» اگه ساعت شروع تو این بازه باشه، قیمت خودکار تخفیف می‌خوره (ولی همیشه قابل ویرایش دستیه)
+        </div>
+        <div className="space-y-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings.offpeak_enabled === "true"}
+              onChange={(e) => setSettings((p) => ({ ...p, offpeak_enabled: e.target.checked ? "true" : "false" }))}
+            />
+            <span className="text-sm text-white">فعال باشه</span>
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">از ساعت</label>
+              <input
+                className="form-input"
+                type="number"
+                min="0"
+                max="23"
+                dir="ltr"
+                value={settings.offpeak_start_hour}
+                onChange={(e) => setSettings((p) => ({ ...p, offpeak_start_hour: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">تا ساعت</label>
+              <input
+                className="form-input"
+                type="number"
+                min="0"
+                max="23"
+                dir="ltr"
+                value={settings.offpeak_end_hour}
+                onChange={(e) => setSettings((p) => ({ ...p, offpeak_end_hour: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">درصد تخفیف</label>
+            <input
+              className="form-input"
+              type="number"
+              min="0"
+              max="90"
+              dir="ltr"
+              value={settings.offpeak_discount_percent}
+              onChange={(e) => setSettings((p) => ({ ...p, offpeak_discount_percent: e.target.value }))}
+            />
+          </div>
+          <button className="btn btn-success btn-full" onClick={handleSavePrices} disabled={savingPrices}>
+            {savingPrices ? "در حال ذخیره..." : "💾 ذخیره"}
+          </button>
+        </div>
+      </div>
+
+      {/* Loyalty Points */}
+      <div className="card" style={{ borderColor: "#2f6b4f" }}>
+        <h2 className="text-lg font-bold text-white mb-1">🎁 باشگاه امتیازی</h2>
+        <div className="text-xs text-slate-500 mb-4">
+          امتیاز خودکار از رویِ مجموع واقعاً پرداخت‌شده‌ی هر مشتری محاسبه می‌شه — نیازی به کار دستی نیست
+        </div>
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">هر چند تومان پرداخت‌شده = ۱ امتیاز</label>
+          <input
+            className="form-input"
+            type="number"
+            dir="ltr"
+            value={settings.loyalty_point_value}
+            onChange={(e) => setSettings((p) => ({ ...p, loyalty_point_value: e.target.value }))}
+          />
+          <button className="btn btn-success btn-full mt-3" onClick={handleSavePrices} disabled={savingPrices}>
+            {savingPrices ? "در حال ذخیره..." : "💾 ذخیره"}
           </button>
         </div>
       </div>
