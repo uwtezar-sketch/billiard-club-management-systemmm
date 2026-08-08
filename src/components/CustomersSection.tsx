@@ -40,12 +40,50 @@ interface HistoryEntry {
   partnerLabel: string | null;
 }
 
+interface SmartLoyalty {
+  score: number;
+  tier: "excellent" | "good" | "average" | "risky" | "very_risky";
+  multiplier: number;
+  basePointValue: number;
+  effectivePointValue: number;
+  mode: "shadow" | "active";
+  maxDiscountPercent: number;
+  usedDefaultScore: boolean;
+  metrics: {
+    resolvedObligationsLifetime: number;
+    resolvedObligationsRecent: number;
+    cleanRatioLifetime: number | null;
+    cleanRatioRecent: number | null;
+    currentDebt: number;
+    totalManualPaid: number;
+    recentPaymentsCount: number;
+  };
+  reasonFlags: string[];
+}
+
+const RELIABILITY_TIER_META: Record<SmartLoyalty["tier"], { label: string; color: string }> = {
+  excellent: { label: "عالی", color: "#5ee89b" },
+  good: { label: "خوب", color: "#7fd88f" },
+  average: { label: "متوسط", color: "#e0b23a" },
+  risky: { label: "پرریسک", color: "#e08a3a" },
+  very_risky: { label: "خیلی پرریسک", color: "#f27f8a" },
+};
+
+const REASON_FLAG_LABELS_FA: Record<string, string> = {
+  high_open_debt: "بدهی باز بالا نسبت به سابقه",
+  active_debt_servicing: "اخیراً پرداخت دستی روی بدهی داشته",
+  clean_payment_history: "سابقه‌ی پرداخت تمیز",
+  limited_history: "سابقه هنوز کمه",
+  debt_heavy_recently: "اخیراً بدهی‌محور بوده",
+};
+
 interface CustomerDetail extends Customer {
   gameSpent: number;
   favoriteType: string | null;
   favoriteCafeItems: { name: string; quantity: number }[];
   history: HistoryEntry[];
   pointValue: number;
+  smartLoyalty: SmartLoyalty;
 }
 
 interface Suggestion {
@@ -238,7 +276,7 @@ export default function CustomersSection() {
         showToast(data.error || "خطا در ثبت استفاده از امتیاز", "error");
         return;
       }
-      showToast("امتیاز استفاده شد", "success");
+      showToast(data.valueApplied ? `امتیاز استفاده شد (${formatPrice(data.valueApplied)})` : "امتیاز استفاده شد", "success");
       setRedeemModal(false);
       setRedeemPoints("");
       setRedeemNote("");
@@ -552,6 +590,41 @@ export default function CustomersSection() {
               </button>
             </div>
 
+            {/* Smart Loyalty — فقط داخلی، به مشتری نشون داده نمی‌شه */}
+            {detail.smartLoyalty && (
+              <div className="rounded-lg p-3" style={{ background: "#141a17", border: "1px dashed #3a453e" }}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-slate-400">🧠 قابلیت‌اطمینان پرداخت (فقط داخلی)</span>
+                  <span className="text-[10px]" style={{ color: detail.smartLoyalty.mode === "active" ? "#5ee89b" : "#8a9488" }}>
+                    {detail.smartLoyalty.mode === "active" ? "⚡ فعال" : "👁️ سایه"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-2xl font-bold" style={{ color: RELIABILITY_TIER_META[detail.smartLoyalty.tier].color }}>
+                    {detail.smartLoyalty.score.toLocaleString("fa-IR")}
+                  </span>
+                  <span className="text-xs" style={{ color: RELIABILITY_TIER_META[detail.smartLoyalty.tier].color }}>
+                    {RELIABILITY_TIER_META[detail.smartLoyalty.tier].label} — ضریب {detail.smartLoyalty.multiplier.toLocaleString("fa-IR")}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-500 mb-2">
+                  ارزش هر امتیاز: {formatPrice(detail.smartLoyalty.effectivePointValue)}
+                  {detail.smartLoyalty.mode === "shadow" && (
+                    <span> (اگه فعال بشه: {formatPrice(Math.round(detail.smartLoyalty.basePointValue * detail.smartLoyalty.multiplier))})</span>
+                  )}
+                </div>
+                {detail.smartLoyalty.reasonFlags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {detail.smartLoyalty.reasonFlags.map((f) => (
+                      <span key={f} className="text-[10px] rounded px-1.5 py-0.5" style={{ background: "#1c2420", color: "#8a9488" }}>
+                        {REASON_FLAG_LABELS_FA[f] || f}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {detail.favoriteType && (
               <div className="text-slate-300">
                 میز موردعلاقه: <span className="text-white font-bold">{TYPE_LABELS[detail.favoriteType] || detail.favoriteType}</span>
@@ -622,6 +695,11 @@ export default function CustomersSection() {
               placeholder="مثلاً ۵"
             />
           </div>
+          {detail && Number(redeemPoints) > 0 && (
+            <div className="text-xs" style={{ color: "#5ee89b" }}>
+              معادل {formatPrice(Number(redeemPoints) * detail.smartLoyalty.effectivePointValue)}
+            </div>
+          )}
           <div>
             <label className="block text-xs text-slate-400 mb-1">بابت چی؟ (اختیاری)</label>
             <input

@@ -4,6 +4,7 @@ import { customers, invoices, invoiceItems, invoiceShares, debtors, debts, custo
 import { eq, inArray, and } from "drizzle-orm";
 import { isSamePerson } from "@/lib/personMatch";
 import { getPointValue, calcEarnedPoints, getRedeemedPoints } from "@/lib/loyalty";
+import { computeReliability } from "@/lib/loyaltyReliability";
 
 const CHRONIC_DEBT_DAYS = 15;
 const GOOD_CUSTOMER_MIN_VISITS = 3;
@@ -133,6 +134,9 @@ export async function GET(
     const redeemedPoints = await getRedeemedPoints(customer.id);
     const loyaltyPoints = Math.max(0, earnedPoints - redeemedPoints);
 
+    // Smart Loyalty V1 — فقط داخلی (کارمند/مدیر)، هیچ‌جا مستقیم به مشتری نشون داده نمی‌شه
+    const smartLoyalty = await computeReliability(customer.id);
+
     return NextResponse.json({
       ...customer,
       visitCount,
@@ -149,6 +153,7 @@ export async function GET(
       tier,
       loyaltyPoints,
       pointValue,
+      smartLoyalty,
     });
   } catch (e) {
     console.error(e);

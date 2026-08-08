@@ -232,6 +232,9 @@ export const customers = pgTable("customers", {
 // امتیاز وفاداری هیچ‌وقت مستقیم ذخیره نمی‌شه — همیشه از رویِ «مجموع واقعاً پرداخت‌شده ÷ ارزش هر امتیاز»
 // محاسبه می‌شه (مثل بدهکارها) تا با ویرایش فاکتورهای قدیمی هم همیشه درست بمونه.
 // این جدول فقط استفاده‌های امتیاز (redemption) رو نگه می‌داره؛ باقی‌مونده = امتیازِ محاسبه‌شده منهای جمعِ این جدول.
+// valueApplied و invoiceId برای Smart Loyalty V1 اضافه شدن: چون تشخیص «این تخفیف مال کدوم فاکتوره و چقدر ارزش واقعی داشته»
+// از روی discountType/discountValue عمومیِ فاکتور مبهم و شکننده بود، این دو ستون صریح این رابطه رو ثبت می‌کنن
+// (به‌جای حدس زدن) — هر دو nullable هستن تا رکوردهای قدیمی/redemption های بدون فاکتور مشکلی پیش نیارن.
 export const customerPointRedemptions = pgTable("customer_point_redemptions", {
   id: serial("id").primaryKey(),
   customerId: integer("customer_id").notNull().references(() => customers.id),
@@ -239,5 +242,7 @@ export const customerPointRedemptions = pgTable("customer_point_redemptions", {
   note: text("note"),
   byUsername: text("by_username"),
   jalaaliDate: text("jalaali_date"),
+  valueApplied: numeric("value_applied", { precision: 12, scale: 2 }), // مبلغ تومانیِ واقعیِ اعمال‌شده (points × effectivePointValue وقتِ ثبت)
+  invoiceId: integer("invoice_id").references(() => invoices.id), // اگه این استفاده از امتیاز مالِ یک فاکتور مشخص بوده
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

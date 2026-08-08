@@ -4,6 +4,7 @@ import Modal from "./Modal";
 import { formatDuration, calcPrice, formatPrice, toJalaali } from "@/lib/jalaali";
 import { useToast } from "./Toast";
 import CustomerNameAutocomplete from "./CustomerNameAutocomplete";
+import { normalizePhone } from "@/lib/phone";
 
 interface Session {
   id: number;
@@ -92,14 +93,35 @@ export default function InvoiceModal({
   const [invoiceStatus, setInvoiceStatus] = useState<"paid" | "debt" | "pending">("paid");
   const [notes, setNotes] = useState("");
   const [debtors, setDebtors] = useState<Debtor[]>([]);
-  const [customerDirectory, setCustomerDirectory] = useState<{ name: string; phone: string }[]>([]);
+  const [customerDirectory, setCustomerDirectory] = useState<{ id: number; name: string; phone: string }[]>([]);
 
   useEffect(() => {
     fetch("/api/customers")
       .then((r) => r.json())
-      .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { name: string; phone: string }) => ({ name: c.name, phone: c.phone })) : []))
+      .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { id: number; name: string; phone: string }) => ({ id: c.id, name: c.name, phone: c.phone })) : []))
       .catch(() => {});
   }, []);
+
+  // ── امتیاز وفاداری هنگام تسویه (Smart Loyalty) ────────────────────────
+  const normalizedInvoicePhone = normalizePhone(customerPhone);
+  const matchedCustomer = normalizedInvoicePhone.length >= 10 ? customerDirectory.find((c) => normalizePhone(c.phone) === normalizedInvoicePhone) || null : null;
+  const [loyaltyDetail, setLoyaltyDetail] = useState<{ loyaltyPoints: number; smartLoyalty: { effectivePointValue: number; maxDiscountPercent: number; score: number; tier: string; mode: string } } | null>(null);
+  const [usePoints, setUsePoints] = useState(false);
+  const [pointsInput, setPointsInput] = useState("");
+
+  useEffect(() => {
+    if (!matchedCustomer) {
+      setLoyaltyDetail(null);
+      setUsePoints(false);
+      setPointsInput("");
+      return;
+    }
+    fetch(`/api/customers/${matchedCustomer.id}`)
+      .then((r) => r.json())
+      .then((d) => setLoyaltyDetail({ loyaltyPoints: d.loyaltyPoints || 0, smartLoyalty: d.smartLoyalty }))
+      .catch(() => setLoyaltyDetail(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchedCustomer?.id]);
   const [selectedDebtorId, setSelectedDebtorId] = useState<number | null>(null);
   const [newDebtorName, setNewDebtorName] = useState(session.customerName || "");
   const [newDebtorPhone, setNewDebtorPhone] = useState(session.customerPhone || "");
@@ -179,7 +201,17 @@ export default function InvoiceModal({
   let discountAmount = 0;
   if (discountType === "percent") discountAmount = Math.round(subtotal * (Number(discountValue || 0) / 100));
   if (discountType === "fixed") discountAmount = Number(discountValue || 0);
-  const totalAmount = Math.max(0, subtotal - discountAmount);
+
+  // ── سقفِ تخفیفِ امتیازی: بر اساس مبلغِ قابل‌پرداخت بعد از تخفیف عادی، قبل از تخفیف امتیازی ─────
+  const amountBeforePointsDiscount = Math.max(0, subtotal - discountAmount);
+  const effectivePointValue = loyaltyDetail?.smartLoyalty.effectivePointValue || 500;
+  const maxDiscountPercent = loyaltyDetail?.smartLoyalty.maxDiscountPercent ?? 10;
+  const maxPointsByCap = effectivePointValue > 0 ? Math.floor((amountBeforePointsDiscount * (maxDiscountPercent / 100)) / effectivePointValue) : 0;
+  const maxRedeemablePoints = !isSplitMode && loyaltyDetail ? Math.max(0, Math.min(loyaltyDetail.loyaltyPoints, maxPointsByCap)) : 0;
+  const pointsToRedeem = usePoints ? Math.max(0, Math.min(Number(pointsInput) || 0, maxRedeemablePoints)) : 0;
+  const pointsDiscountAmount = pointsToRedeem * effectivePointValue;
+
+  const totalAmount = Math.max(0, amountBeforePointsDiscount - pointsDiscountAmount);
   const referenceTotal = isManualTotal && manualTotalInput !== "" ? Math.max(0, Number(manualTotalInput)) : totalAmount;
   const sharesSum = shares.reduce((s, sh) => s + (Number(sh.amount) || 0), 0);
   const sharesMismatch = isSplitMode && sharesSum !== referenceTotal;
@@ -276,6 +308,10 @@ export default function InvoiceModal({
         body.status = paymentMethod === "debt" ? "debt" : invoiceStatus;
         if (isManualTotal && manualTotalInput !== "") {
           body.manualTotal = Math.max(0, Number(manualTotalInput));
+        } else if (pointsToRedeem > 0) {
+          // مبلغ نهایی باید شاملِ تخفیفِ امتیازی هم باشه — چون discountType/discountValue فقط
+          // تخفیفِ دستیِ عادی رو می‌شناسه، از manualTotal برای اعمال مبلغِ واقعیِ محاسبه‌شده استفاده می‌کنیم
+          body.manualTotal = totalAmount;
         }
         if (paymentMethod === "debt") {
           body.debtorId = selectedDebtorId || null;
@@ -293,6 +329,23 @@ export default function InvoiceModal({
       });
 
       if (res.ok) {
+        const createdInvoice = await res.json().catch(() => null);
+        if (!isSplitMode && pointsToRedeem > 0 && matchedCustomer) {
+          try {
+            await fetch(`/api/customers/${matchedCustomer.id}/points`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                points: pointsToRedeem,
+                note: createdInvoice?.invoiceNumber ? `تخفیف هنگام تسویه فاکتور ${createdInvoice.invoiceNumber}` : "تخفیف هنگام تسویه فاکتور",
+                capBasisAmount: amountBeforePointsDiscount,
+                invoiceId: createdInvoice?.id || undefined,
+              }),
+            });
+          } catch {
+            // فاکتور با موفقیت ثبت شده؛ اگه ثبتِ استفاده از امتیاز شکست بخوره، جلوی کارِ کارمند رو نمی‌گیریم
+          }
+        }
         onSuccess();
       } else {
         const err = await res.json();
@@ -407,6 +460,48 @@ export default function InvoiceModal({
             />
           )}
         </div>
+
+        {/* استفاده از امتیاز وفاداری */}
+        {!isSplitMode && matchedCustomer && loyaltyDetail && loyaltyDetail.loyaltyPoints > 0 && (
+          <div className="card" style={{ borderColor: "#2f6b4f" }}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-sm font-bold" style={{ color: "#5ee89b" }}>🎁 امتیاز وفاداری این مشتری</h3>
+              <button
+                className={`btn btn-sm ${usePoints ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => {
+                  if (usePoints) {
+                    setUsePoints(false);
+                    setPointsInput("");
+                  } else {
+                    setUsePoints(true);
+                    setPointsInput(String(maxRedeemablePoints));
+                  }
+                }}
+              >
+                {usePoints ? "✕ لغو" : "استفاده کن"}
+              </button>
+            </div>
+            <div className="text-xs text-slate-500">
+              {loyaltyDetail.loyaltyPoints.toLocaleString("fa-IR")} امتیاز موجود — حداکثر {maxRedeemablePoints.toLocaleString("fa-IR")} امتیاز روی این فاکتور (سقف {maxDiscountPercent.toLocaleString("fa-IR")}٪)
+            </div>
+            <div className="text-[10px] text-slate-600 mt-0.5">
+              🧠 امتیازِ اعتماد این مشتری: {loyaltyDetail.smartLoyalty.score.toLocaleString("fa-IR")} ({loyaltyDetail.smartLoyalty.mode === "active" ? "فعال" : "سایه"})
+            </div>
+            {usePoints && (
+              <div className="mt-2 space-y-1">
+                <input
+                  type="number"
+                  className="form-input"
+                  value={pointsInput}
+                  onChange={(e) => setPointsInput(e.target.value)}
+                  dir="ltr"
+                  max={maxRedeemablePoints}
+                />
+                <div className="text-xs text-green-400">تخفیفِ اعمال‌شده: {formatPrice(pointsDiscountAmount)}</div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ویرایش دستی مبلغ نهایی */}
         <div className="card">
@@ -669,6 +764,12 @@ export default function InvoiceModal({
             <div className="flex justify-between text-sm">
               <span className="text-slate-400">تخفیف:</span>
               <span className="text-red-400">-{formatPrice(discountAmount)}</span>
+            </div>
+          )}
+          {pointsDiscountAmount > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-400">🎁 تخفیفِ امتیازی ({pointsToRedeem.toLocaleString("fa-IR")} امتیاز):</span>
+              <span className="text-red-400">-{formatPrice(pointsDiscountAmount)}</span>
             </div>
           )}
           <div className="divider" />

@@ -30,6 +30,10 @@ export default function SettingsSection() {
     offpeak_start_hour: "15",
     offpeak_end_hour: "20",
     offpeak_discount_percent: "20",
+    smart_loyalty_mode: "shadow",
+    smart_loyalty_recent_window_days: "60",
+    smart_loyalty_default_new_customer_score: "75",
+    loyalty_max_discount_percent: "10",
   });
   const [menuItems, setMenuItems] = useState<CafeMenuItem[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
@@ -59,6 +63,10 @@ export default function SettingsSection() {
       offpeak_start_hour: s.offpeak_start_hour || "15",
       offpeak_end_hour: s.offpeak_end_hour || "20",
       offpeak_discount_percent: s.offpeak_discount_percent || "20",
+      smart_loyalty_mode: s.smart_loyalty_mode === "active" ? "active" : "shadow",
+      smart_loyalty_recent_window_days: s.smart_loyalty_recent_window_days || "60",
+      smart_loyalty_default_new_customer_score: s.smart_loyalty_default_new_customer_score || "75",
+      loyalty_max_discount_percent: s.loyalty_max_discount_percent || "10",
     });
     const m = await menuRes.json();
     setMenuItems(Array.isArray(m) ? m : []);
@@ -266,6 +274,74 @@ export default function SettingsSection() {
             onChange={(e) => setSettings((p) => ({ ...p, loyalty_point_value: e.target.value }))}
           />
           <button className="btn btn-success btn-full mt-3" onClick={handleSavePrices} disabled={savingPrices}>
+            {savingPrices ? "در حال ذخیره..." : "💾 ذخیره"}
+          </button>
+        </div>
+      </div>
+
+      {/* Smart Loyalty V1 */}
+      <div className="card" style={{ borderColor: "#2f6b4f" }}>
+        <h2 className="text-lg font-bold text-white mb-1">🧠 Smart Loyalty (بتا)</h2>
+        <div className="text-xs text-slate-500 mb-4">
+          بر اساس رفتار واقعی پرداخت هر مشتری، یک «امتیاز قابل‌اعتمادی» داخلی حساب می‌کنه و ارزش امتیازهاش رو متناسب باهاش تنظیم می‌کنه.
+          این امتیاز فقط برای خودتون نشون داده می‌شه، هیچ‌وقت به مشتری گفته نمی‌شه.
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">حالت</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className={`btn btn-sm ${settings.smart_loyalty_mode === "shadow" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setSettings((p) => ({ ...p, smart_loyalty_mode: "shadow" }))}
+              >
+                👁️ سایه (فقط نمایش)
+              </button>
+              <button
+                className={`btn btn-sm ${settings.smart_loyalty_mode === "active" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setSettings((p) => ({ ...p, smart_loyalty_mode: "active" }))}
+              >
+                ⚡ فعال (واقعاً اعمال بشه)
+              </button>
+            </div>
+            <div className="text-[10px] text-slate-500 mt-1">
+              {settings.smart_loyalty_mode === "shadow"
+                ? "در حالت سایه، امتیاز مشتری‌ها فقط نمایش داده می‌شه ولی ارزش امتیازشون تغییر نمی‌کنه (همیشه ۵۰۰ تومان)."
+                : "در حالت فعال، ارزش هر امتیاز واقعاً بر اساس امتیازِ مشتری کم/زیاد می‌شه."}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">پنجره‌ی «اخیر» (روز)</label>
+              <input
+                className="form-input"
+                type="number"
+                dir="ltr"
+                value={settings.smart_loyalty_recent_window_days}
+                onChange={(e) => setSettings((p) => ({ ...p, smart_loyalty_recent_window_days: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">امتیاز پیش‌فرض مشتری جدید</label>
+              <input
+                className="form-input"
+                type="number"
+                dir="ltr"
+                value={settings.smart_loyalty_default_new_customer_score}
+                onChange={(e) => setSettings((p) => ({ ...p, smart_loyalty_default_new_customer_score: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">سقف تخفیفِ امتیازی روی هر فاکتور (٪)</label>
+            <input
+              className="form-input"
+              type="number"
+              dir="ltr"
+              value={settings.loyalty_max_discount_percent}
+              onChange={(e) => setSettings((p) => ({ ...p, loyalty_max_discount_percent: e.target.value }))}
+            />
+          </div>
+          <button className="btn btn-success btn-full" onClick={handleSavePrices} disabled={savingPrices}>
             {savingPrices ? "در حال ذخیره..." : "💾 ذخیره"}
           </button>
         </div>

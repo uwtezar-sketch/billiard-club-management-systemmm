@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
+import { normalizePhone } from "@/lib/phone";
 
 interface DirectoryItem {
   name: string;
@@ -16,7 +17,8 @@ interface Props {
 
 // برخلاف <datalist> مرورگر که برای متن فارسی و توی موبایل قابل‌اعتماد نیست،
 // این کامپوننت هر جای اسم رو جستجو می‌کنه (نه فقط از اول) — یعنی تایپ «مروی» توی
-// «محمد مروی» هم پیدا می‌شه.
+// «محمد مروی» هم پیدا می‌شه. همین‌جوری اگه به‌جای اسم، شماره تلفن (یا بخشی ازش) تایپ بشه
+// هم جستجو می‌کنه — یعنی همین یک کادر، هم با اسم پیدا می‌کنه هم با شماره.
 export default function CustomerNameAutocomplete({ value, onChange, directory, placeholder, className }: Props) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -30,11 +32,16 @@ export default function CustomerNameAutocomplete({ value, onChange, directory, p
   }, []);
 
   const query = value.trim().toLowerCase();
+  const digitsQuery = normalizePhone(value);
   const matches =
     query.length >= 1
       ? directory
-          .filter((d) => d.name.toLowerCase().includes(query))
-          .sort((a, b) => a.name.toLowerCase().indexOf(query) - b.name.toLowerCase().indexOf(query))
+          .filter((d) => d.name.toLowerCase().includes(query) || (digitsQuery.length >= 3 && normalizePhone(d.phone).includes(digitsQuery)))
+          .sort((a, b) => {
+            const aIdx = a.name.toLowerCase().indexOf(query);
+            const bIdx = b.name.toLowerCase().indexOf(query);
+            return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+          })
           .slice(0, 6)
       : [];
 

@@ -599,15 +599,16 @@ const [loading, setLoading] = useState(true);
               🌙 الان تو بازه‌ی کم‌رونقه — قیمت {settings.offpeak_discount_percent}٪ تخفیف خورد (قابل ویرایش)
             </div>
           )}
+
           <div>
-            <label className="block text-sm text-slate-400 mb-1">📱 شماره تلفن (کد مشتری — اول این رو بپرس)</label>
-            <input
-              className="form-input"
-              placeholder="09..."
-              value={startForm.customerPhone}
-              onChange={(e) => setStartForm((p) => ({ ...p, customerPhone: e.target.value }))}
-              type="tel"
-              dir="ltr"
+            <label className="block text-sm text-slate-400 mb-1">نام مشتری</label>
+            <CustomerNameAutocomplete
+              value={startForm.customerName}
+              directory={customerDirectory}
+              placeholder="اسم یا شماره تلفن رو تایپ کن..."
+              onChange={(name, phone) =>
+                setStartForm((p) => ({ ...p, customerName: name, customerPhone: phone !== undefined ? phone : p.customerPhone }))
+              }
             />
           </div>
 
@@ -629,6 +630,18 @@ const [loading, setLoading] = useState(true);
             </div>
           )}
 
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">شماره تلفن (اختیاری)</label>
+            <input
+              className="form-input"
+              placeholder="09..."
+              value={startForm.customerPhone}
+              onChange={(e) => setStartForm((p) => ({ ...p, customerPhone: e.target.value }))}
+              type="tel"
+              dir="ltr"
+            />
+          </div>
+
           {isNewPhoneCandidate && (
             <label
               className="flex items-center gap-2 rounded-lg p-3 text-xs cursor-pointer"
@@ -639,17 +652,6 @@ const [loading, setLoading] = useState(true);
             </label>
           )}
 
-          <div>
-            <label className="block text-sm text-slate-400 mb-1">نام مشتری (اختیاری)</label>
-            <CustomerNameAutocomplete
-              value={startForm.customerName}
-              directory={customerDirectory}
-              placeholder="نام مشتری..."
-              onChange={(name, phone) =>
-                setStartForm((p) => ({ ...p, customerName: name, customerPhone: phone && !p.customerPhone ? phone : p.customerPhone }))
-              }
-            />
-          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-400 mb-1">ساعت شروع</label>
