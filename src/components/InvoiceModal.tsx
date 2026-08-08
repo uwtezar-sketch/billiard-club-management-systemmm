@@ -88,7 +88,7 @@ export default function InvoiceModal({
   const [selectedCafeItems, setSelectedCafeItems] = useState<CafeOrder[]>(cafeOrders);
   const [discountType, setDiscountType] = useState<"none" | "percent" | "fixed">("none");
   const [discountValue, setDiscountValue] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "debt">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "debt">("card");
   const [invoiceStatus, setInvoiceStatus] = useState<"paid" | "debt" | "pending">("paid");
   const [notes, setNotes] = useState("");
   const [debtors, setDebtors] = useState<Debtor[]>([]);
@@ -120,7 +120,7 @@ export default function InvoiceModal({
       phone: "",
       amount: String(amount),
       status: "pending",
-      paymentMethod: "cash",
+      paymentMethod: "card",
       debtorId: null,
       newDebtorName: "",
       newDebtorPhone: "",
@@ -266,7 +266,7 @@ export default function InvoiceModal({
           phone: s.phone || undefined,
           amount: Number(s.amount) || 0,
           status: s.status,
-          paymentMethod: s.status === "paid" ? s.paymentMethod || "cash" : s.status === "debt" ? "debt" : null,
+          paymentMethod: s.status === "paid" ? s.paymentMethod || "card" : s.status === "debt" ? "debt" : null,
           debtorId: s.status === "debt" ? s.debtorId || undefined : undefined,
           newDebtorName: s.status === "debt" && !s.debtorId ? s.newDebtorName || "نامشخص" : undefined,
           newDebtorPhone: s.status === "debt" && !s.debtorId ? s.newDebtorPhone || undefined : undefined,

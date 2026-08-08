@@ -4,6 +4,7 @@ import Modal from "./Modal";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./Toast";
 import { todayJalaali, toJalaali } from "@/lib/jalaali";
+import CustomerNameAutocomplete from "./CustomerNameAutocomplete";
 
 interface Reservation {
   id: number;
@@ -51,6 +52,14 @@ export default function ReservationsSection() {
   const [editRes, setEditRes] = useState<Reservation | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [customerDirectory, setCustomerDirectory] = useState<{ name: string; phone: string }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/customers")
+      .then((r) => r.json())
+      .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { name: string; phone: string }) => ({ name: c.name, phone: c.phone })) : []))
+      .catch(() => {});
+  }, []);
 
   const [form, setForm] = useState({
     customerName: "",
@@ -235,7 +244,11 @@ export default function ReservationsSection() {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs text-slate-400 mb-1">نام مشتری *</label>
-          <input className="form-input" value={form.customerName} onChange={(e) => setForm((p) => ({ ...p, customerName: e.target.value }))} />
+          <CustomerNameAutocomplete
+            value={form.customerName}
+            directory={customerDirectory}
+            onChange={(name, phone) => setForm((p) => ({ ...p, customerName: name, customerPhone: phone && !p.customerPhone ? phone : p.customerPhone }))}
+          />
         </div>
         <div>
           <label className="block text-xs text-slate-400 mb-1">شماره تلفن</label>

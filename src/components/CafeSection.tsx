@@ -39,7 +39,7 @@ export default function CafeSection() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "debt">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "debt">("card");
   const [orderStatus, setOrderStatus] = useState<"paid" | "pending">("paid");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);

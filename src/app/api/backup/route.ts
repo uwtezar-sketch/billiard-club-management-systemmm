@@ -7,11 +7,16 @@ import {
   cafeMenu,
   invoices,
   invoiceItems,
+  invoiceShares,
   sessionCafeOrders,
   debtors,
   debts,
+  debtorPayments,
   reservations,
   settings,
+  customers,
+  inventoryItems,
+  inventoryLogs,
 } from "@/db/schema";
 
 export async function GET() {
@@ -23,11 +28,16 @@ export async function GET() {
       cafeMenuRows,
       invoicesRows,
       invoiceItemsRows,
+      invoiceSharesRows,
       sessionCafeOrdersRows,
       debtorsRows,
       debtsRows,
+      debtorPaymentsRows,
       reservationsRows,
       settingsRows,
+      customersRows,
+      inventoryItemsRows,
+      inventoryLogsRows,
     ] = await Promise.all([
       db.select().from(users),
       db.select().from(tables),
@@ -35,18 +45,23 @@ export async function GET() {
       db.select().from(cafeMenu),
       db.select().from(invoices),
       db.select().from(invoiceItems),
+      db.select().from(invoiceShares),
       db.select().from(sessionCafeOrders),
       db.select().from(debtors),
       db.select().from(debts),
+      db.select().from(debtorPayments),
       db.select().from(reservations),
       db.select().from(settings),
+      db.select().from(customers),
+      db.select().from(inventoryItems),
+      db.select().from(inventoryLogs),
     ]);
 
     const safeUsers = usersRows.map((u) => ({ id: u.id, username: u.username, role: u.role, createdAt: u.createdAt }));
 
     const backup = {
       generatedAt: new Date().toISOString(),
-      version: 1,
+      version: 2,
       data: {
         users: safeUsers,
         tables: tablesRows,
@@ -54,11 +69,16 @@ export async function GET() {
         cafeMenu: cafeMenuRows,
         invoices: invoicesRows,
         invoiceItems: invoiceItemsRows,
+        invoiceShares: invoiceSharesRows,
         sessionCafeOrders: sessionCafeOrdersRows,
         debtors: debtorsRows,
         debts: debtsRows,
+        debtorPayments: debtorPaymentsRows,
         reservations: reservationsRows,
         settings: settingsRows,
+        customers: customersRows,
+        inventoryItems: inventoryItemsRows,
+        inventoryLogs: inventoryLogsRows,
       },
     };
 

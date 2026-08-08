@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { customers, invoices, invoiceShares, debtors } from "@/db/schema";
-import { like, or, inArray } from "drizzle-orm";
+import { customers, invoices, invoiceShares, debtors, debts } from "@/db/schema";
+import { like, or, inArray, eq } from "drizzle-orm";
 import { normalizePhone } from "@/lib/phone";
 import { normalizeName, isSamePerson } from "@/lib/personMatch";
+
+// یک بدهیِ بازِ ≥ این تعداد روز → «بدهکار مزمن» حساب می‌شه
+const CHRONIC_DEBT_DAYS = 15;
+// حداقل تعداد مراجعه برای اینکه بشه درباره‌ی خوش‌حساب‌بودن مشتری قضاوت کرد
+const GOOD_CUSTOMER_MIN_VISITS = 3;
 
 export async function GET(req: NextRequest) {
   try {
@@ -23,6 +28,7 @@ export async function GET(req: NextRequest) {
       ? await db.select().from(invoiceShares).where(inArray(invoiceShares.invoiceId, splitInvoices.map((i) => i.id)))
       : [];
     const allDebtors = await db.select().from(debtors);
+    const unpaidDebts = await db.select().from(debts).where(eq(debts.isPaid, false));
     const invoiceById = new Map(allInvoices.map((i) => [i.id, i]));
 
     const result = allCustomers.map((c) => {
@@ -66,6 +72,29 @@ export async function GET(req: NextRequest) {
       const matchingDebtor = allDebtors.find((d) => d.customerId === c.id) || allDebtors.find((d) => isSamePerson(person, { phone: d.phone, name: d.name }));
       const outstandingDebt = matchingDebtor ? Number(matchingDebtor.totalDebt) : 0;
 
+      // قدیمی‌ترین بدهیِ بازِ این مشتری چند روزه که تسویه نشده (برای تشخیص «بدهکار مزمن»)
+      let oldestUnpaidDebtDays: number | null = null;
+      if (matchingDebtor) {
+        const myUnpaid = unpaidDebts.filter((d) => d.debtorId === matchingDebtor.id);
+        if (myUnpaid.length > 0) {
+          const oldest = myUnpaid.reduce((min, d) => (new Date(d.createdAt) < new Date(min.createdAt) ? d : min));
+          oldestUnpaidDebtDays = Math.floor((Date.now() - new Date(oldest.createdAt).getTime()) / 86400000);
+        }
+      }
+
+      const isChronicDebtor = outstandingDebt > 0 && oldestUnpaidDebtDays !== null && oldestUnpaidDebtDays >= CHRONIC_DEBT_DAYS;
+
+      // ── تشخیص خوش‌حساب/بدحساب — ساده و بر اساس رفتار واقعی، نه حدس ─────────
+      // bad: بدهیِ بازِ مزمن داره (پونزده روز به بالا تسویه نکرده)
+      // watch: بدهیِ باز داره ولی هنوز تازه‌ست (کمتر از پونزده روز) — فعلاً قضاوت زوده
+      // good: هیچ بدهیِ بازی نداره و حداقل چندبار مراجعه کرده (سابقه‌ی کافی برای اعتماد)
+      // new: مشتری تازه یا کم‌مراجعه که هنوز داده‌ی کافی برای قضاوت نیست
+      let tier: "good" | "watch" | "bad" | "new";
+      if (isChronicDebtor) tier = "bad";
+      else if (outstandingDebt > 0) tier = "watch";
+      else if (visitCount >= GOOD_CUSTOMER_MIN_VISITS) tier = "good";
+      else tier = "new";
+
       return {
         ...c,
         visitCount,
@@ -76,6 +105,8 @@ export async function GET(req: NextRequest) {
         cafeSpent,
         lastVisit,
         daysSinceVisit,
+        oldestUnpaidDebtDays,
+        tier,
       };
     });
 

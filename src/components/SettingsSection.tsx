@@ -171,28 +171,6 @@ export default function SettingsSection() {
             />
             <div className="text-xs text-slate-500 mt-1">{formatPrice(Number(settings.playstation_price))} در ساعت</div>
           </div>
-          <div>
-            <label className="block text-sm text-blue-400 mb-1">🎳 ایت‌بال</label>
-            <input
-              className="form-input"
-              type="number"
-              dir="ltr"
-              value={settings.eightball_price}
-              onChange={(e) => setSettings((p) => ({ ...p, eightball_price: e.target.value }))}
-            />
-            <div className="text-xs text-slate-500 mt-1">{formatPrice(Number(settings.eightball_price))} در ساعت</div>
-          </div>
-          <div>
-            <label className="block text-sm text-purple-400 mb-1">🎮 پلی‌استیشن</label>
-            <input
-              className="form-input"
-              type="number"
-              dir="ltr"
-              value={settings.playstation_price}
-              onChange={(e) => setSettings((p) => ({ ...p, playstation_price: e.target.value }))}
-            />
-            <div className="text-xs text-slate-500 mt-1">{formatPrice(Number(settings.playstation_price))} در ساعت</div>
-          </div>
           <button
             className="btn btn-success btn-full"
             onClick={handleSavePrices}

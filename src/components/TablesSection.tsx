@@ -4,8 +4,27 @@ import Modal from "./Modal";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./Toast";
 import { formatDuration, calcPrice, formatPrice, toJalaali } from "@/lib/jalaali";
+import { normalizePhone } from "@/lib/phone";
 import InvoiceModal from "./InvoiceModal";
 import CustomerNameAutocomplete from "./CustomerNameAutocomplete";
+
+interface CustomerDirEntry {
+  id: number;
+  name: string;
+  phone: string;
+  isVip: boolean;
+  tier: "good" | "watch" | "bad" | "new";
+  outstandingDebt: number;
+  oldestUnpaidDebtDays: number | null;
+  visitCount: number;
+}
+
+const TIER_META: Record<CustomerDirEntry["tier"], { label: string; color: string }> = {
+  good: { label: "🟢 خوش‌حساب", color: "#5ee89b" },
+  watch: { label: "🟡 بدهیِ تازه", color: "#e0b23a" },
+  bad: { label: "🔴 بدحساب مزمن", color: "#f27f8a" },
+  new: { label: "", color: "" },
+};
 
 interface Table {
   id: number;
@@ -136,12 +155,27 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
   const [menuItems, setMenuItems] = useState<CafeMenuItem[]>([]);
   const [settings, setSettings] = useState<Settings>({});
   const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [customerDirectory, setCustomerDirectory] = useState<{ name: string; phone: string }[]>([]);
+  const [customerDirectory, setCustomerDirectory] = useState<CustomerDirEntry[]>([]);
 
   useEffect(() => {
     fetch("/api/customers")
       .then((r) => r.json())
-      .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { name: string; phone: string }) => ({ name: c.name, phone: c.phone })) : []))
+      .then((d) =>
+        setCustomerDirectory(
+          Array.isArray(d)
+            ? d.map((c) => ({
+                id: c.id,
+                name: c.name,
+                phone: c.phone,
+                isVip: !!c.isVip,
+                tier: c.tier || "new",
+                outstandingDebt: Number(c.outstandingDebt || 0),
+                oldestUnpaidDebtDays: c.oldestUnpaidDebtDays ?? null,
+                visitCount: Number(c.visitCount || 0),
+              }))
+            : []
+        )
+      )
       .catch(() => {});
   }, []);
 
@@ -168,6 +202,7 @@ const [loading, setLoading] = useState(true);
   });
   const [startLoading, setStartLoading] = useState(false);
   const [fillingReservationId, setFillingReservationId] = useState<number | null>(null);
+  const [addNewToClub, setAddNewToClub] = useState(false);
 
   // Session edit
   const [editStartTime, setEditStartTime] = useState("");
@@ -221,6 +256,7 @@ const [loading, setLoading] = useState(true);
       price: String(getDefaultPrice(table.type)),
     });
     setFillingReservationId(todayRes?.id || null);
+    setAddNewToClub(false);
     setStartModal({ open: true, table });
   }
 
@@ -262,9 +298,24 @@ const [loading, setLoading] = useState(true);
           body: JSON.stringify({ status: "done", sessionId: newSession.id }),
         });
       }
+      if (addNewToClub && startForm.customerName.trim() && startForm.customerPhone.trim()) {
+        try {
+          const cRes = await fetch("/api/customers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: startForm.customerName.trim(), phone: startForm.customerPhone.trim() }),
+          });
+          if (cRes.ok) {
+            showToast("مشتری جدید به باشگاه اضافه شد", "success");
+          }
+        } catch {
+          // بی‌سروصدا نادیده گرفته می‌شه — شروع میز مهم‌تره، بعداً هم می‌شه دستی اضافه‌ش کرد
+        }
+      }
       showToast(`${getTypeLabel(table.type)} ${table.name} شروع شد`, "success");
       setStartModal({ open: false, table: null });
       setFillingReservationId(null);
+      setAddNewToClub(false);
       fetchData();
       onRefreshNeeded?.();
     } finally {
@@ -395,6 +446,19 @@ const [loading, setLoading] = useState(true);
 
   const secondsAgoLabel = useSecondsAgo(lastSync);
 
+  // شماره‌ای که تو فرم «شروع میز» تایپ می‌شه رو با باشگاه مشتریان مچ می‌کنیم — همون ایده‌ی «کد اشتراک»
+  const normalizedStartPhone = normalizePhone(startForm.customerPhone);
+  const matchedStartCustomer =
+    normalizedStartPhone.length >= 10 ? customerDirectory.find((c) => normalizePhone(c.phone) === normalizedStartPhone) || null : null;
+  const isNewPhoneCandidate = normalizedStartPhone.length >= 10 && !matchedStartCustomer && !!startForm.customerName.trim();
+
+  useEffect(() => {
+    if (matchedStartCustomer && !startForm.customerName.trim()) {
+      setStartForm((p) => ({ ...p, customerName: matchedStartCustomer.name }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchedStartCustomer?.id]);
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -514,6 +578,46 @@ const [loading, setLoading] = useState(true);
             </div>
           )}
           <div>
+            <label className="block text-sm text-slate-400 mb-1">📱 شماره تلفن (کد مشتری — اول این رو بپرس)</label>
+            <input
+              className="form-input"
+              placeholder="09..."
+              value={startForm.customerPhone}
+              onChange={(e) => setStartForm((p) => ({ ...p, customerPhone: e.target.value }))}
+              type="tel"
+              dir="ltr"
+            />
+          </div>
+
+          {matchedStartCustomer && (
+            <div className="rounded-lg p-3 text-xs" style={{ background: "#0e1512", border: "1px solid #2f6b4f" }}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-white font-bold">✅ {matchedStartCustomer.name}</span>
+                {matchedStartCustomer.isVip && <span className="badge" style={{ background: "#3a2a0c", color: "#e0b23a" }}>⭐ VIP</span>}
+                {TIER_META[matchedStartCustomer.tier].label && (
+                  <span style={{ color: TIER_META[matchedStartCustomer.tier].color }}>{TIER_META[matchedStartCustomer.tier].label}</span>
+                )}
+              </div>
+              <div className="text-slate-500 mt-1">{matchedStartCustomer.visitCount.toLocaleString("fa-IR")} بار مراجعه</div>
+              {matchedStartCustomer.tier === "bad" && (
+                <div className="mt-1.5 font-bold" style={{ color: "#f27f8a" }}>
+                  ⚠️ بدهیِ باز {formatPrice(matchedStartCustomer.outstandingDebt)} — {matchedStartCustomer.oldestUnpaidDebtDays?.toLocaleString("fa-IR")} روزه تسویه نشده
+                </div>
+              )}
+            </div>
+          )}
+
+          {isNewPhoneCandidate && (
+            <label
+              className="flex items-center gap-2 rounded-lg p-3 text-xs cursor-pointer"
+              style={{ background: "#0e1512", border: "1px solid #c9971f" }}
+            >
+              <input type="checkbox" checked={addNewToClub} onChange={(e) => setAddNewToClub(e.target.checked)} />
+              <span style={{ color: "#e0b23a" }}>🆕 مشتری جدیده — به باشگاه مشتریان اضافه‌ش کن</span>
+            </label>
+          )}
+
+          <div>
             <label className="block text-sm text-slate-400 mb-1">نام مشتری (اختیاری)</label>
             <CustomerNameAutocomplete
               value={startForm.customerName}
@@ -522,17 +626,6 @@ const [loading, setLoading] = useState(true);
               onChange={(name, phone) =>
                 setStartForm((p) => ({ ...p, customerName: name, customerPhone: phone && !p.customerPhone ? phone : p.customerPhone }))
               }
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-slate-400 mb-1">شماره تلفن (اختیاری)</label>
-            <input
-              className="form-input"
-              placeholder="09..."
-              value={startForm.customerPhone}
-              onChange={(e) => setStartForm((p) => ({ ...p, customerPhone: e.target.value }))}
-              type="tel"
-              dir="ltr"
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

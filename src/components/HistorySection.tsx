@@ -102,7 +102,7 @@ export default function HistorySection() {
   const [loading, setLoading] = useState(false);
   const [deleteInvoiceId, setDeleteInvoiceId] = useState<number | null>(null);
 
-  const [editMethod, setEditMethod] = useState<string>("cash");
+  const [editMethod, setEditMethod] = useState<string>("card");
   const [editStatus, setEditStatus] = useState<string>("pending");
   const [debtorsList, setDebtorsList] = useState<Debtor[]>([]);
   const [customerDirectory, setCustomerDirectory] = useState<{ name: string; phone: string }[]>([]);
@@ -404,13 +404,13 @@ export default function HistorySection() {
           await fetch(`/api/invoices/${entry.invoiceId}/shares/${entry.shareId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: "paid", paymentMethod: "cash" }),
+            body: JSON.stringify({ status: "paid", paymentMethod: "card" }),
           });
         } else {
           await fetch(`/api/invoices/${entry.invoiceId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: "paid", paymentMethod: "cash" }),
+            body: JSON.stringify({ status: "paid", paymentMethod: "card" }),
           });
         }
       }

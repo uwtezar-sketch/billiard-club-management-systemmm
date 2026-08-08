@@ -20,6 +20,8 @@ interface Customer {
   cafeSpent: number;
   lastVisit: string | null;
   daysSinceVisit: number | null;
+  oldestUnpaidDebtDays: number | null;
+  tier: "good" | "watch" | "bad" | "new";
 }
 
 interface HistoryEntry {
@@ -71,6 +73,13 @@ const PAYMENT_MAP: Record<string, string> = {
 
 const INACTIVE_DAYS = 30;
 
+const TIER_MAP: Record<Customer["tier"], { label: string; color: string; bg: string }> = {
+  good: { label: "🟢 خوش‌حساب", color: "#5ee89b", bg: "#123024" },
+  watch: { label: "🟡 بدهیِ تازه", color: "#e0b23a", bg: "#3a2a0c" },
+  bad: { label: "🔴 بدحساب مزمن", color: "#f27f8a", bg: "#3d1016" },
+  new: { label: "", color: "", bg: "" },
+};
+
 export default function CustomersSection() {
   const { showToast } = useToast();
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -86,6 +95,7 @@ export default function CustomersSection() {
   const [loading, setLoading] = useState(false);
 
   const [form, setForm] = useState({ name: "", phone: "", notes: "", isVip: false });
+  const [showInsights, setShowInsights] = useState(true);
 
   const fetchCustomers = useCallback(async () => {
     try {
@@ -203,8 +213,73 @@ export default function CustomersSection() {
     fetchSuggestions();
   }
 
+  const showInsightsPanel = !debouncedSearch && customers.length >= 3;
+  const topProfitable = [...customers].sort((a, b) => b.totalPaid - a.totalPaid).slice(0, 5);
+  const discountCandidates = customers
+    .filter((c) => c.tier === "good")
+    .sort((a, b) => b.totalPaid - a.totalPaid)
+    .slice(0, 5);
+  const chronicDebtors = customers
+    .filter((c) => c.tier === "bad")
+    .sort((a, b) => (b.oldestUnpaidDebtDays || 0) - (a.oldestUnpaidDebtDays || 0));
+
   return (
     <div className="space-y-4">
+      {/* Insights: پرسودترین‌ها، کاندید تخفیف، بدحساب‌های مزمن */}
+      {showInsightsPanel && (topProfitable.length > 0 || discountCandidates.length > 0 || chronicDebtors.length > 0) && (
+        <div className="card" style={{ borderColor: "#2f6b4f" }}>
+          <button className="flex items-center justify-between w-full" onClick={() => setShowInsights((v) => !v)}>
+            <h3 className="font-bold" style={{ color: "#5ee89b" }}>📈 تحلیل سوددهی مشتریان</h3>
+            <span className="text-slate-500">{showInsights ? "▲" : "▼"}</span>
+          </button>
+          {showInsights && (
+            <div className="space-y-4 mt-3">
+              {topProfitable.length > 0 && (
+                <div>
+                  <div className="text-xs text-slate-400 mb-2">🏆 پرسودترین مشتریان</div>
+                  <div className="space-y-1">
+                    {topProfitable.map((c, i) => (
+                      <div key={c.id} className="flex items-center justify-between rounded-lg px-3 py-1.5 cursor-pointer" style={{ background: "#0e1512" }} onClick={() => openDetail(c.id)}>
+                        <span className="text-white text-sm">{i + 1}. {c.name}</span>
+                        <span className="text-sm font-bold" style={{ color: "#5ee89b" }}>{formatPrice(c.totalPaid)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {discountCandidates.length > 0 && (
+                <div>
+                  <div className="text-xs text-slate-400 mb-2">🟢 کاندیدهای تخفیف (خوش‌حساب و ثابت)</div>
+                  <div className="space-y-1">
+                    {discountCandidates.map((c) => (
+                      <div key={c.id} className="flex items-center justify-between rounded-lg px-3 py-1.5 cursor-pointer" style={{ background: "#0e1512" }} onClick={() => openDetail(c.id)}>
+                        <span className="text-white text-sm">{c.name}</span>
+                        <span className="text-xs text-slate-500">{c.visitCount.toLocaleString("fa-IR")} بار — بدون بدهی باز</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {chronicDebtors.length > 0 && (
+                <div>
+                  <div className="text-xs text-slate-400 mb-2">🔴 بدحساب‌های مزمن (بدهی ≥ ۱۵ روز تسویه‌نشده)</div>
+                  <div className="space-y-1">
+                    {chronicDebtors.map((c) => (
+                      <div key={c.id} className="flex items-center justify-between rounded-lg px-3 py-1.5 cursor-pointer" style={{ background: "#0e1512" }} onClick={() => openDetail(c.id)}>
+                        <span className="text-white text-sm">{c.name}</span>
+                        <span className="text-xs font-bold" style={{ color: "#f27f8a" }}>
+                          {formatPrice(c.outstandingDebt)} — {c.oldestUnpaidDebtDays?.toLocaleString("fa-IR")} روز
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Suggestions */}
       {suggestions.length > 0 && (
         <div className="card" style={{ borderColor: "#c9971f" }}>
@@ -265,6 +340,11 @@ export default function CustomersSection() {
                       <span className="font-bold text-white">{c.name}</span>
                       {c.isVip && (
                         <span className="badge" style={{ background: "#3a2a0c", color: "#e0b23a" }}>⭐ VIP</span>
+                      )}
+                      {TIER_MAP[c.tier].label && (
+                        <span className="badge" style={{ background: TIER_MAP[c.tier].bg, color: TIER_MAP[c.tier].color }}>
+                          {TIER_MAP[c.tier].label}
+                        </span>
                       )}
                       {inactive && (
                         <span className="badge" style={{ background: "#26332a", color: "#8a9488" }}>
@@ -360,6 +440,11 @@ export default function CustomersSection() {
                     <div className="flex items-center gap-2">
                       <span className="text-white font-bold">{detail.name}</span>
                       {detail.isVip && <span className="badge" style={{ background: "#3a2a0c", color: "#e0b23a" }}>⭐ VIP</span>}
+                      {TIER_MAP[detail.tier].label && (
+                        <span className="badge" style={{ background: TIER_MAP[detail.tier].bg, color: TIER_MAP[detail.tier].color }}>
+                          {TIER_MAP[detail.tier].label}
+                        </span>
+                      )}
                     </div>
                     <a href={`tel:${detail.phone}`} className="text-xs" style={{ color: "#5ecfe0" }} dir="ltr">{detail.phone}</a>
                     {detail.notes && <div className="text-xs text-slate-400 mt-1">📝 {detail.notes}</div>}
@@ -387,7 +472,9 @@ export default function CustomersSection() {
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-lg p-2 text-center" style={{ background: "#3d101633", border: "1px solid #8f1d2c" }}>
                 <div className="text-sm font-bold" style={{ color: "#f27f8a" }}>{formatPrice(detail.outstandingDebt)}</div>
-                <div className="text-[10px] text-red-300">بدهیِ باز الان</div>
+                <div className="text-[10px] text-red-300">
+                  بدهیِ باز الان{detail.oldestUnpaidDebtDays !== null ? ` — ${detail.oldestUnpaidDebtDays.toLocaleString("fa-IR")} روز` : ""}
+                </div>
               </div>
               <div className="rounded-lg p-2 text-center" style={{ background: "#3d2c0f33", border: "1px solid #8f6f1d" }}>
                 <div className="text-sm font-bold text-yellow-400">{formatPrice(detail.totalPendingAmount)}</div>

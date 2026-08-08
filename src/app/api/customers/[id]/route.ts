@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { customers, invoices, invoiceItems, invoiceShares, debtors } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { customers, invoices, invoiceItems, invoiceShares, debtors, debts } from "@/db/schema";
+import { eq, inArray, and } from "drizzle-orm";
 import { isSamePerson } from "@/lib/personMatch";
+
+const CHRONIC_DEBT_DAYS = 15;
+const GOOD_CUSTOMER_MIN_VISITS = 3;
 
 export async function GET(
   _req: NextRequest,
@@ -109,6 +112,21 @@ export async function GET(
     const matchingDebtor = allDebtors.find((d) => d.customerId === customer.id) || allDebtors.find((d) => isSamePerson(person, { phone: d.phone, name: d.name }));
     const outstandingDebt = matchingDebtor ? Number(matchingDebtor.totalDebt) : 0;
 
+    let oldestUnpaidDebtDays: number | null = null;
+    if (matchingDebtor) {
+      const myUnpaid = await db.select().from(debts).where(and(eq(debts.debtorId, matchingDebtor.id), eq(debts.isPaid, false)));
+      if (myUnpaid.length > 0) {
+        const oldest = myUnpaid.reduce((min, d) => (new Date(d.createdAt) < new Date(min.createdAt) ? d : min));
+        oldestUnpaidDebtDays = Math.floor((Date.now() - new Date(oldest.createdAt).getTime()) / 86400000);
+      }
+    }
+    const isChronicDebtor = outstandingDebt > 0 && oldestUnpaidDebtDays !== null && oldestUnpaidDebtDays >= CHRONIC_DEBT_DAYS;
+    let tier: "good" | "watch" | "bad" | "new";
+    if (isChronicDebtor) tier = "bad";
+    else if (outstandingDebt > 0) tier = "watch";
+    else if (visitCount >= GOOD_CUSTOMER_MIN_VISITS) tier = "good";
+    else tier = "new";
+
     return NextResponse.json({
       ...customer,
       visitCount,
@@ -121,6 +139,8 @@ export async function GET(
       favoriteType,
       favoriteCafeItems,
       history,
+      oldestUnpaidDebtDays,
+      tier,
     });
   } catch (e) {
     console.error(e);

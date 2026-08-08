@@ -82,6 +82,13 @@ const TYPE_TABS: { id: string; label: string }[] = [
   { id: "playstation", label: "🎮 پلی‌استیشن" },
 ];
 
+// باشگاه از ساعت ۱۵ (۳ عصر) تا ۳ صبح بازه — این بلوک‌ها (به ترتیب بازشدن تا بسته‌شدن) رو از
+// heatmap کلی جدا می‌کنیم تا فقط ساعاتِ کاریِ واقعی رو تحلیل کنیم، نه کل شبانه‌روز.
+// ایندکس‌ها متناظرِ blockLabels سمت سرور هستن: ["۰-۲","۲-۴","۴-۶","۶-۸","۸-۱۰","۱۰-۱۲","۱۲-۱۴","۱۴-۱۶","۱۶-۱۸","۱۸-۲۰","۲۰-۲۲","۲۲-۲۴"]
+const OPERATING_BLOCK_ORDER = [7, 8, 9, 10, 11, 0, 1];
+// این دو بلوکِ اول (۱۴ تا ۲۰) بازه‌ی «کم‌رونق»ه که می‌خوایم روش تمرکز کنیم
+const OFF_PEAK_FOCUS_COUNT = 2;
+
 function jalaaliDay(date: string) {
   const parts = date.split("/");
   return Number(parts[2] || 0).toLocaleString("fa-IR");
@@ -145,6 +152,19 @@ export default function DashboardSection() {
 
   const cafeSharePercent =
     analytics && analytics.totalRevenue > 0 ? Math.round((analytics.totalCafeRevenue / analytics.totalRevenue) * 100) : 0;
+
+  // ── تحلیل ساعات کم‌رونق (فقط داخل بازه‌ی کاری واقعی باشگاه: ۱۵ تا ۳) ─────
+  const offPeakBlocks = (() => {
+    if (!analytics || currentHeatmap.length === 0) return [];
+    const totals = OPERATING_BLOCK_ORDER.map((idx) => {
+      const total = currentHeatmap.reduce((s, dayRow) => s + (dayRow[idx] || 0), 0);
+      return { idx, label: analytics.blockLabels[idx], total };
+    });
+    const maxTotal = Math.max(1, ...totals.map((t) => t.total));
+    return totals.map((t) => ({ ...t, pct: Math.round((t.total / maxTotal) * 100) }));
+  })();
+  const quietestBlocks = [...offPeakBlocks].sort((a, b) => a.total - b.total).slice(0, OFF_PEAK_FOCUS_COUNT);
+  const quietestIdxSet = new Set(quietestBlocks.map((b) => b.idx));
 
   return (
     <div className="space-y-4">
@@ -408,6 +428,47 @@ export default function DashboardSection() {
           ) : (
             <div className="text-center text-slate-500 text-sm py-4">داده‌ای برای این دسته وجود ندارد</div>
           )}
+        </div>
+      )}
+
+      {/* Off-peak hours (ساعات کم‌رونق در بازه‌ی کاری واقعی باشگاه) */}
+      {analytics && offPeakBlocks.length > 0 && offPeakBlocks.some((b) => b.total > 0) && (
+        <div className="card" style={{ borderColor: "#2f6b4f" }}>
+          <h3 className="font-bold mb-1" style={{ color: "#5ee89b" }}>🌙 ترافیک طی ساعات کاری (۱۵ تا ۳)</h3>
+          <div className="text-xs text-slate-500 mb-3">جمع تعداد فاکتور در هر بازه، طی بازه‌ی انتخاب‌شده — {TYPE_TABS.find((t) => t.id === heatType)?.label}</div>
+          <div className="space-y-1.5">
+            {offPeakBlocks.map((b) => {
+              const isQuiet = quietestIdxSet.has(b.idx) && b.total > 0;
+              return (
+                <div key={b.idx} className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 w-10 shrink-0">{b.label}</span>
+                  <div className="flex-1 rounded-full overflow-hidden" style={{ background: "#0e1512", height: "16px" }}>
+                    <div
+                      className="h-full rounded-full flex items-center justify-end px-1.5"
+                      style={{
+                        width: `${Math.max(b.pct, b.total > 0 ? 8 : 0)}%`,
+                        background: isQuiet ? "#e0b23a" : "#2563eb",
+                      }}
+                    >
+                      {b.total > 0 && <span className="text-[9px] font-bold text-white">{b.total.toLocaleString("fa-IR")}</span>}
+                    </div>
+                  </div>
+                  {isQuiet && <span className="text-[10px] shrink-0" style={{ color: "#e0b23a" }}>😴 کم‌رونق</span>}
+                </div>
+              );
+            })}
+          </div>
+          <div className="rounded-lg p-3 mt-3 text-xs leading-6" style={{ background: "#0e1512" }}>
+            <div className="text-slate-300 mb-1">💡 چند ایده برای پُرکردن این ساعت‌ها:</div>
+            <ul className="text-slate-400 space-y-1 pr-4" style={{ listStyle: "disc" }}>
+              <li>تخفیف «پیش از ساعت ۸» روی قیمت میز (مثلاً ۲۰-۳۰٪) برای کسایی که زودتر بیان</li>
+              <li>کمبوی کافه+میز مخصوص بعدازظهر با قیمت ثابت و جذاب‌تر از شب</li>
+              <li>تبلیغ به‌عنوان مکان خنک برای فرار از گرمای بعدازظهر کیش (خصوصاً برای گردشگرا)</li>
+              <li>تورنمنت هفتگی بعدازظهر (اسنوکر/ایت‌بال) با جایزه‌ی کوچیک، برای عادت‌دادن مشتری‌های ثابت</li>
+              <li>پیام/تماس با مشتری‌های خوش‌حساب و ثابت باشگاه، برای دعوت به بازدید زودتر با تخفیف ویژه</li>
+              <li>هماهنگی با هتل‌ها/تور گردانان کیش برای فرستادن گردشگرا تو بعدازظهر</li>
+            </ul>
+          </div>
         </div>
       )}
 
