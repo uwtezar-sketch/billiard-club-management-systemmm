@@ -83,6 +83,11 @@ export async function GET(
     }
     history.sort((a, b) => new Date(b.issuedAt).getTime() - new Date(a.issuedAt).getTime());
 
+    // آخرین مراجعه رو از رویِ کل تاریخچه حساب می‌کنیم (نه فقط فاکتورهای پرداخت‌شده) — چون مشتری با
+    // یه فاکتورِ در انتظار/بدهی هم واقعاً اومده بوده، فقط هنوز تسویه نکرده.
+    const lastVisit = history.length > 0 ? history[0].issuedAt : null;
+    const daysSinceVisit = lastVisit ? Math.floor((Date.now() - new Date(lastVisit).getTime()) / 86400000) : null;
+
     const visitCount = history.length;
     let totalPaid = history.filter((h) => h.status === "paid").reduce((s, h) => s + h.amount, 0);
     const totalDebtCreated = history.filter((h) => h.status === "debt").reduce((s, h) => s + h.amount, 0);
@@ -140,6 +145,7 @@ export async function GET(
     const earnedPoints = calcEarnedPoints(totalPaid, pointValue);
     const redeemedPoints = await getRedeemedPoints(customer.id);
     const loyaltyPoints = Math.max(0, earnedPoints - redeemedPoints);
+    const avgPerVisit = visitCount > 0 ? Math.round(totalPaid / visitCount) : null;
 
     // Smart Loyalty V1 — فقط داخلی (کارمند/مدیر)، هیچ‌جا مستقیم به مشتری نشون داده نمی‌شه
     const smartLoyalty = await computeReliability(customer.id);
@@ -161,6 +167,9 @@ export async function GET(
       loyaltyPoints,
       pointValue,
       smartLoyalty,
+      lastVisit,
+      daysSinceVisit,
+      avgPerVisit,
     });
   } catch (e) {
     console.error(e);

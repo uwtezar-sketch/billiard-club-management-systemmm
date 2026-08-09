@@ -84,6 +84,7 @@ interface CustomerDetail extends Customer {
   history: HistoryEntry[];
   pointValue: number;
   smartLoyalty: SmartLoyalty;
+  avgPerVisit: number | null;
 }
 
 interface Suggestion {
@@ -120,7 +121,8 @@ const TIER_MAP: Record<Customer["tier"], { label: string; color: string; bg: str
   new: { label: "", color: "", bg: "" },
 };
 
-export default function CustomersSection() {
+export default function CustomersSection({ role }: { role: "admin" | "employee" | null }) {
+  const isAdmin = role === "admin";
   const { showToast } = useToast();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -140,6 +142,12 @@ export default function CustomersSection() {
   const [redeemPoints, setRedeemPoints] = useState("");
   const [redeemNote, setRedeemNote] = useState("");
   const [redeemLoading, setRedeemLoading] = useState(false);
+  const [giftModal, setGiftModal] = useState(false);
+  const [giftDelta, setGiftDelta] = useState("");
+  const [giftNote, setGiftNote] = useState("");
+  const [giftLoading, setGiftLoading] = useState(false);
+  const [notesInput, setNotesInput] = useState("");
+  const [notesSaving, setNotesSaving] = useState(false);
 
   const fetchCustomers = useCallback(async () => {
     try {
@@ -220,6 +228,7 @@ export default function CustomersSection() {
       const data = await res.json();
       setDetail(data);
       setForm({ name: data.name, phone: data.phone, notes: data.notes || "", isVip: data.isVip });
+      setNotesInput(data.notes || "");
     } finally {
       setDetailLoading(false);
     }
@@ -284,6 +293,56 @@ export default function CustomersSection() {
       fetchCustomers();
     } finally {
       setRedeemLoading(false);
+    }
+  }
+
+  async function handleGiftPoints() {
+    if (!detail) return;
+    const delta = Number(giftDelta);
+    if (!delta || delta === 0) {
+      showToast("عدد امتیاز نامعتبره", "error");
+      return;
+    }
+    setGiftLoading(true);
+    try {
+      const res = await fetch(`/api/customers/${detail.id}/points/adjust`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ delta, note: giftNote || undefined }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(data.error || "خطا در ثبت هدیه/کسر امتیاز", "error");
+        return;
+      }
+      showToast(delta > 0 ? `${delta.toLocaleString("fa-IR")} امتیاز هدیه داده شد` : `${Math.abs(delta).toLocaleString("fa-IR")} امتیاز کسر شد`, "success");
+      setGiftModal(false);
+      setGiftDelta("");
+      setGiftNote("");
+      openDetail(detail.id);
+      fetchCustomers();
+    } finally {
+      setGiftLoading(false);
+    }
+  }
+
+  async function handleSaveNotes() {
+    if (!detail) return;
+    setNotesSaving(true);
+    try {
+      const res = await fetch(`/api/customers/${detail.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: notesInput }),
+      });
+      if (res.ok) {
+        showToast("یادداشت ذخیره شد", "success");
+        setDetail((d) => (d ? { ...d, notes: notesInput } : d));
+      } else {
+        showToast("خطا در ذخیره‌ی یادداشت", "error");
+      }
+    } finally {
+      setNotesSaving(false);
     }
   }
 
@@ -511,10 +570,6 @@ export default function CustomersSection() {
                   <label className="block text-xs text-slate-400 mb-1">شماره تلفن</label>
                   <input className="form-input" dir="ltr" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
                 </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">یادداشت</label>
-                  <input className="form-input" value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} />
-                </div>
                 <button
                   type="button"
                   className={`btn w-full ${form.isVip ? "btn-primary" : "btn-secondary"}`}
@@ -541,21 +596,56 @@ export default function CustomersSection() {
                       )}
                     </div>
                     <a href={`tel:${detail.phone}`} className="text-xs" style={{ color: "#5ecfe0" }} dir="ltr">{detail.phone}</a>
-                    {detail.notes && <div className="text-xs text-slate-400 mt-1">📝 {detail.notes}</div>}
                   </div>
-                  <button className="btn btn-secondary btn-sm" onClick={() => setEditing(true)}>✏️ ویرایش</button>
+                  {isAdmin && <button className="btn btn-secondary btn-sm" onClick={() => setEditing(true)}>✏️ ویرایش</button>}
                 </div>
               </div>
             )}
+
+            {/* یادداشت شخصیِ مدیر — فقط مدیر می‌نویسه، کارمند فقط می‌خونه */}
+            <div className="rounded-lg p-3" style={{ background: "#0e1512" }}>
+              <div className="text-xs text-slate-400 mb-1.5">📝 یادداشت مدیر (فقط داخلی)</div>
+              {isAdmin ? (
+                <>
+                  <textarea
+                    className="form-input"
+                    rows={3}
+                    value={notesInput}
+                    onChange={(e) => setNotesInput(e.target.value)}
+                    placeholder="مثلاً «همیشه با غزاله میاد» یا «به نوشابه حساسیت داره»..."
+                  />
+                  <button
+                    className="btn btn-secondary btn-sm mt-2"
+                    onClick={handleSaveNotes}
+                    disabled={notesSaving || notesInput === (detail.notes || "")}
+                  >
+                    {notesSaving ? "در حال ذخیره..." : "💾 ذخیره یادداشت"}
+                  </button>
+                </>
+              ) : (
+                <div className="text-sm text-slate-300 whitespace-pre-wrap">{detail.notes || "یادداشتی ثبت نشده"}</div>
+              )}
+            </div>
 
             <div className="grid grid-cols-3 gap-2">
               <div className="rounded-lg p-2 text-center" style={{ background: "#0e1512" }}>
                 <div className="text-lg font-bold text-white">{detail.visitCount.toLocaleString("fa-IR")}</div>
                 <div className="text-[10px] text-slate-500">مراجعه</div>
+                {detail.daysSinceVisit !== null && (
+                  <div
+                    className="text-[10px] mt-0.5"
+                    style={{ color: detail.daysSinceVisit <= 30 ? "#5ee89b" : detail.daysSinceVisit <= 60 ? "#e0b23a" : "#f27f8a" }}
+                  >
+                    ⏳ {detail.daysSinceVisit.toLocaleString("fa-IR")} روز از آخرین مراجعه
+                  </div>
+                )}
               </div>
               <div className="rounded-lg p-2 text-center" style={{ background: "#0e1512" }}>
                 <div className="text-sm font-bold" style={{ color: "#5ee89b" }}>{formatPrice(detail.totalPaid)}</div>
                 <div className="text-[10px] text-slate-500">واقعاً پرداخت‌کرده</div>
+                {detail.avgPerVisit !== null && (
+                  <div className="text-[10px] text-slate-500 mt-0.5">📊 میانگین {formatPrice(detail.avgPerVisit)}</div>
+                )}
               </div>
               <div className="rounded-lg p-2 text-center" style={{ background: "#0e1512" }}>
                 <div className="text-sm font-bold" style={{ color: "#e0b23a" }}>{formatPrice(detail.cafeSpent)}</div>
@@ -576,18 +666,30 @@ export default function CustomersSection() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg p-3" style={{ background: "#123024", border: "1px solid #2f6b4f" }}>
-              <div>
-                <div className="text-sm font-bold" style={{ color: "#5ee89b" }}>🎁 {detail.loyaltyPoints.toLocaleString("fa-IR")} امتیاز</div>
-                <div className="text-[10px] text-slate-500">هر {formatPrice(detail.pointValue)} پرداخت‌شده = ۱ امتیاز</div>
+            <div className="rounded-lg p-3" style={{ background: "#123024", border: "1px solid #2f6b4f" }}>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <div className="text-sm font-bold" style={{ color: "#5ee89b" }}>🎁 {detail.loyaltyPoints.toLocaleString("fa-IR")} امتیاز</div>
+                  <div className="text-[10px] text-slate-500">هر {formatPrice(detail.pointValue)} پرداخت‌شده = ۱ امتیاز</div>
+                </div>
+                <div className="flex gap-2">
+                  {isAdmin && (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => { setGiftDelta(""); setGiftNote(""); setGiftModal(true); }}
+                    >
+                      🎁 هدیه امتیاز
+                    </button>
+                  )}
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    disabled={detail.loyaltyPoints <= 0}
+                    onClick={() => { setRedeemPoints(""); setRedeemNote(""); setRedeemModal(true); }}
+                  >
+                    استفاده از امتیاز
+                  </button>
+                </div>
               </div>
-              <button
-                className="btn btn-secondary btn-sm"
-                disabled={detail.loyaltyPoints <= 0}
-                onClick={() => { setRedeemPoints(""); setRedeemNote(""); setRedeemModal(true); }}
-              >
-                استفاده از امتیاز
-              </button>
             </div>
 
             {/* Smart Loyalty — فقط داخلی، به مشتری نشون داده نمی‌شه */}
@@ -712,6 +814,44 @@ export default function CustomersSection() {
           <div className="flex gap-3">
             <button className="btn btn-secondary flex-1" onClick={() => setRedeemModal(false)}>انصراف</button>
             <button className="btn btn-primary flex-1" onClick={handleRedeemPoints} disabled={redeemLoading}>ثبت</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Gift/Adjust Points Modal — فقط مدیر */}
+      <Modal open={giftModal} onClose={() => setGiftModal(false)} title="🎁 هدیه / تنظیم دستی امتیاز">
+        <div className="space-y-4">
+          {detail && (
+            <div className="text-xs text-slate-400">موجودی فعلی: <span className="text-white font-bold">{detail.loyaltyPoints.toLocaleString("fa-IR")}</span> امتیاز</div>
+          )}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">عدد امتیاز (مثبت = هدیه، منفی = کسر)</label>
+            <input
+              className="form-input"
+              type="number"
+              dir="ltr"
+              value={giftDelta}
+              onChange={(e) => setGiftDelta(e.target.value)}
+              placeholder="مثلاً ۲۰ یا ۲۰-"
+            />
+          </div>
+          {Number(giftDelta) !== 0 && !isNaN(Number(giftDelta)) && (
+            <div className="text-xs" style={{ color: Number(giftDelta) > 0 ? "#5ee89b" : "#f27f8a" }}>
+              {Number(giftDelta) > 0 ? `${Number(giftDelta).toLocaleString("fa-IR")} امتیاز اضافه می‌شه` : `${Math.abs(Number(giftDelta)).toLocaleString("fa-IR")} امتیاز کم می‌شه`}
+            </div>
+          )}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">یادداشت (چرا؟)</label>
+            <input
+              className="form-input"
+              value={giftNote}
+              onChange={(e) => setGiftNote(e.target.value)}
+              placeholder="مثلاً هدیه‌ی مشتری قدیمی، یا اصلاح دستی"
+            />
+          </div>
+          <div className="flex gap-3">
+            <button className="btn btn-secondary flex-1" onClick={() => setGiftModal(false)}>انصراف</button>
+            <button className="btn btn-primary flex-1" onClick={handleGiftPoints} disabled={giftLoading}>ثبت</button>
           </div>
         </div>
       </Modal>

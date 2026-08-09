@@ -244,5 +244,6 @@ export const customerPointRedemptions = pgTable("customer_point_redemptions", {
   jalaaliDate: text("jalaali_date"),
   valueApplied: numeric("value_applied", { precision: 12, scale: 2 }), // مبلغ تومانیِ واقعیِ اعمال‌شده (points × effectivePointValue وقتِ ثبت)
   invoiceId: integer("invoice_id").references(() => invoices.id), // اگه این استفاده از امتیاز مالِ یک فاکتور مشخص بوده
+  kind: text("kind"), // 'redeem' (پیش‌فرض، یعنی null هم همینه) | 'adjustment' (هدیه/تنظیم دستیِ مدیر، مقدارِ points می‌تونه منفی باشه)
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

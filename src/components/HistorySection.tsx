@@ -5,6 +5,7 @@ import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./Toast";
 import { formatPrice, formatDuration } from "@/lib/jalaali";
 import CustomerNameAutocomplete from "./CustomerNameAutocomplete";
+import { normalizePhone } from "@/lib/phone";
 
 interface InvoiceItem {
   id: number;
@@ -95,7 +96,7 @@ export default function HistorySection() {
   const [dateFilter, setDateFilter] = useState("");
   const [showAdvancedDate, setShowAdvancedDate] = useState(false);
   const [daysFilter, setDaysFilter] = useState("30");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("pending");
   const [typeFilter, setTypeFilter] = useState("");
   const [paymentFilter, setPaymentFilter] = useState("");
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -174,6 +175,81 @@ export default function HistorySection() {
       setEditingItems(false);
     }
   }, [selectedInvoice]);
+
+  // ── کارتِ اطلاعاتیِ مشتری (بدهی قبلی + امتیاز) تو پنجره‌ی فاکتور ────────────
+  const [customerSummary, setCustomerSummary] = useState<
+    Record<string, { customerId: number; name: string; points: number; debts: { date: string; description: string; amount: number }[] } | null>
+  >({});
+  const [debtDetailsOpen, setDebtDetailsOpen] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!selectedInvoice) return;
+    const phones = selectedInvoice.isSplit
+      ? selectedInvoice.shares.map((sh) => sh.phone).filter((p): p is string => !!p)
+      : [selectedInvoice.customerPhone].filter((p): p is string => !!p);
+    const normalizedPhones = [...new Set(phones.map((p) => normalizePhone(p)).filter((p) => p.length >= 10))];
+    if (normalizedPhones.length === 0) {
+      setCustomerSummary({});
+      return;
+    }
+    fetch(`/api/customers/quick-summary?phones=${normalizedPhones.join(",")}`)
+      .then((r) => r.json())
+      .then((d) => setCustomerSummary(d || {}))
+      .catch(() => setCustomerSummary({}));
+    setDebtDetailsOpen({});
+  }, [selectedInvoice]);
+
+  function CustomerInfoCard({ phone }: { phone: string | null | undefined }) {
+    const normalized = normalizePhone(phone);
+    if (normalized.length < 10) return null;
+    const summary = customerSummary[normalized];
+    if (!summary) return null;
+    const hasDebt = summary.debts.length > 0;
+    const totalDebt = summary.debts.reduce((s, d) => s + d.amount, 0);
+    if (!hasDebt && summary.points <= 0) return null;
+    const isOpen = !!debtDetailsOpen[normalized];
+    return (
+      <div className="rounded-lg p-3 space-y-2" style={{ background: "#0e1512", border: "1px solid #2f6b4f" }}>
+        <div className="font-bold text-white">ℹ️ {summary.name}</div>
+        {hasDebt && (
+          <div className="text-sm" style={{ color: "#f27f8a" }}>💼 بدهی قبلی: {formatPrice(totalDebt)}</div>
+        )}
+        {summary.points > 0 && (
+          <div className="text-sm" style={{ color: "#5ee89b" }}>🎁 امتیاز موجود: {summary.points.toLocaleString("fa-IR")} امتیاز</div>
+        )}
+        {hasDebt && (
+          <button
+            className="text-xs"
+            style={{ color: "#5ecfe0" }}
+            onClick={() => setDebtDetailsOpen((p) => ({ ...p, [normalized]: !p[normalized] }))}
+          >
+            📋 مشاهده جزئیات بدهی {isOpen ? "▴" : "▾"}
+          </button>
+        )}
+        <div
+          style={{
+            maxHeight: isOpen ? "400px" : "0px",
+            overflow: "hidden",
+            transition: "max-height 0.25s ease",
+          }}
+        >
+          <div className="rounded-lg p-2 mt-1 space-y-1" style={{ background: "#141a17" }}>
+            <div className="text-[11px] text-slate-400 mb-1">🧾 جزئیات بدهی:</div>
+            {summary.debts.map((d, i) => (
+              <div key={i} className="flex justify-between text-xs">
+                <span className="text-slate-300">{d.date} — {d.description}</span>
+                <span className="text-white">{formatPrice(d.amount)}</span>
+              </div>
+            ))}
+            <div className="border-t mt-1 pt-1 flex justify-between text-xs font-bold" style={{ borderColor: "#22282490" }}>
+              <span className="text-slate-300">💰 مجموع</span>
+              <span style={{ color: "#f27f8a" }}>{formatPrice(totalDebt)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (editMethod === "debt" && selectedInvoice?.status !== "debt") {
@@ -746,6 +822,7 @@ export default function HistorySection() {
       >
         {selectedInvoice && (
           <div className="space-y-4 text-sm">
+            {!selectedInvoice.isSplit && <CustomerInfoCard phone={selectedInvoice.customerPhone} />}
             <div className="rounded-lg p-3 space-y-2" style={{ background: "#0e1512" }}>
               <div className="flex gap-2 items-end">
                 <div className="flex-1">
@@ -822,6 +899,7 @@ export default function HistorySection() {
                           onClick={() => saveShareName(sh.id)}
                         >💾</button>
                       </div>
+                      <CustomerInfoCard phone={sh.phone} />
 
                       {partners && (
                         <div className="text-xs" style={{ color: "#b794f6" }}>🤝 یار بازی: {partners}</div>
