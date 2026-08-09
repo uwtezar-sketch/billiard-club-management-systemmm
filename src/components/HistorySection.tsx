@@ -123,6 +123,8 @@ export default function HistorySection() {
   const [pendingAll, setPendingAll] = useState<Invoice[]>([]);
   const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
   const [bulkSettlingKey, setBulkSettlingKey] = useState<string | null>(null);
+  const [bulkToDebtKey, setBulkToDebtKey] = useState<string | null>(null);
+  const [bulkToDebtConfirm, setBulkToDebtConfirm] = useState<PendingGroup | null>(null);
   const [editingItems, setEditingItems] = useState(false);
   const [cafeMenuItems, setCafeMenuItems] = useState<{ id: number; name: string; price: string }[]>([]);
   const [itemActionLoading, setItemActionLoading] = useState(false);
@@ -498,6 +500,55 @@ export default function HistorySection() {
     }
   }
 
+  // انتقالِ همه‌ی فاکتورهای در انتظارِ یک مشتری به بدهکاری، با همون منطقِ «ثبت به‌عنوان بدهکاری»یِ
+  // پنجره‌ی فاکتور تکی (findOrCreateDebtor سمتِ سرور خودش جلوی بدهکارِ تکراری رو می‌گیره)
+  async function handleBulkToDebt(group: PendingGroup) {
+    setBulkToDebtKey(group.key);
+    try {
+      for (const entry of group.entries) {
+        if (entry.shareId) {
+          await fetch(`/api/invoices/${entry.invoiceId}/shares/${entry.shareId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "debt", newDebtorName: group.name, newDebtorPhone: group.phone || undefined }),
+          });
+        } else {
+          await fetch(`/api/invoices/${entry.invoiceId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ paymentMethod: "debt", newDebtorName: group.name, newDebtorPhone: group.phone || undefined }),
+          });
+        }
+      }
+      showToast(`همه‌ی فاکتورهای ${group.name} به بدهکاری منتقل شد`, "success");
+      fetchInvoices();
+      fetchPendingAll();
+    } finally {
+      setBulkToDebtKey(null);
+    }
+  }
+
+  // بدهیِ قبلیِ هر گروه (به‌تفکیک شماره‌ی مشتری) — همون endpoint سبکی که برای کارتِ پنجره‌ی فاکتور تکی هم استفاده شد
+  const [groupSummary, setGroupSummary] = useState<
+    Record<string, { customerId: number; name: string; points: number; debts: { date: string; description: string; amount: number }[] } | null>
+  >({});
+
+  useEffect(() => {
+    const phones = [...new Set(pendingAll.flatMap((inv) => (inv.isSplit ? inv.shares.map((s) => s.phone) : [inv.customerPhone])))]
+      .filter((p): p is string => !!p)
+      .map((p) => normalizePhone(p))
+      .filter((p) => p.length >= 10);
+    const normalized = [...new Set(phones)];
+    if (normalized.length === 0) {
+      setGroupSummary({});
+      return;
+    }
+    fetch(`/api/customers/quick-summary?phones=${normalized.join(",")}`)
+      .then((r) => r.json())
+      .then((d) => setGroupSummary(d || {}))
+      .catch(() => setGroupSummary({}));
+  }, [pendingAll]);
+
   async function fetchCafeMenuItems() {
     try {
       const res = await fetch("/api/cafe");
@@ -703,6 +754,41 @@ export default function HistorySection() {
 
                   {isExpanded && (
                     <div className="mt-3 space-y-2">
+                      {(() => {
+                        const normalized = normalizePhone(g.phone);
+                        const summary = normalized.length >= 10 ? groupSummary[normalized] : null;
+                        const hasDebt = !!summary && summary.debts.length > 0;
+                        if (!hasDebt) return null;
+                        const totalDebt = summary!.debts.reduce((s, d) => s + d.amount, 0);
+                        const isOpen = !!debtDetailsOpen[normalized];
+                        return (
+                          <div className="rounded-lg p-3 space-y-2" style={{ background: "#0e1512", border: "1px solid #8f1d2c55" }}>
+                            <div className="text-sm" style={{ color: "#f27f8a" }}>💼 بدهی قبلی: {formatPrice(totalDebt)}</div>
+                            <button
+                              className="text-xs"
+                              style={{ color: "#5ecfe0" }}
+                              onClick={(e) => { e.stopPropagation(); setDebtDetailsOpen((p) => ({ ...p, [normalized]: !p[normalized] })); }}
+                            >
+                              📋 مشاهده جزئیات بدهی {isOpen ? "▴" : "▾"}
+                            </button>
+                            <div style={{ maxHeight: isOpen ? "400px" : "0px", overflow: "hidden", transition: "max-height 0.25s ease" }}>
+                              <div className="rounded-lg p-2 mt-1 space-y-1" style={{ background: "#141a17" }}>
+                                <div className="text-[11px] text-slate-400 mb-1">🧾 جزئیات بدهی:</div>
+                                {summary!.debts.map((d, i) => (
+                                  <div key={i} className="flex justify-between text-xs">
+                                    <span className="text-slate-300">{d.date} — {d.description}</span>
+                                    <span className="text-white">{formatPrice(d.amount)}</span>
+                                  </div>
+                                ))}
+                                <div className="border-t mt-1 pt-1 flex justify-between text-xs font-bold" style={{ borderColor: "#22282490" }}>
+                                  <span className="text-slate-300">💰 مجموع</span>
+                                  <span style={{ color: "#f27f8a" }}>{formatPrice(totalDebt)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {g.entries.map((entry) => (
                         <div key={`${entry.invoiceId}-${entry.shareId || "full"}`} className="flex justify-between text-xs rounded px-3 py-2" style={{ background: "#0e1512" }}>
                           <span className="text-slate-300">
@@ -717,9 +803,16 @@ export default function HistorySection() {
                       <button
                         className="btn btn-success btn-sm btn-full"
                         onClick={() => handleBulkSettle(g)}
-                        disabled={bulkSettlingKey === g.key}
+                        disabled={bulkSettlingKey === g.key || bulkToDebtKey === g.key}
                       >
                         {bulkSettlingKey === g.key ? "در حال تسویه..." : `✅ تسویه همه (${formatPrice(g.total)})`}
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm btn-full"
+                        onClick={() => setBulkToDebtConfirm(g)}
+                        disabled={bulkSettlingKey === g.key || bulkToDebtKey === g.key}
+                      >
+                        {bulkToDebtKey === g.key ? "در حال انتقال..." : "📋 انتقال همه به بدهکاری"}
                       </button>
                     </div>
                   )}
@@ -1146,6 +1239,18 @@ export default function HistorySection() {
         message="آیا از حذف این فاکتور مطمئنید؟ این کار قابل بازگشت نیست."
         onConfirm={handleDeleteInvoice}
         onCancel={() => setDeleteInvoiceId(null)}
+        danger
+      />
+
+      <ConfirmDialog
+        open={!!bulkToDebtConfirm}
+        message={
+          bulkToDebtConfirm
+            ? `آیا مطمئنی می‌خوای همه‌ی ${bulkToDebtConfirm.entries.length.toLocaleString("fa-IR")} فاکتور ${bulkToDebtConfirm.name} رو به بدهکاری منتقل کنی؟`
+            : ""
+        }
+        onConfirm={() => { if (bulkToDebtConfirm) handleBulkToDebt(bulkToDebtConfirm); setBulkToDebtConfirm(null); }}
+        onCancel={() => setBulkToDebtConfirm(null)}
         danger
       />
     </div>
