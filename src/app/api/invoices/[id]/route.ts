@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { invoices, invoiceItems, debts, invoiceShares } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { findOrCreateDebtor, recomputeDebtorTotal } from "@/lib/debtorLink";
+import { findOrCreateDebtor, recomputeDebtorTotal, settleDebtRow } from "@/lib/debtorLink";
+import { ensureCustomerExists } from "@/lib/customerLink";
+import { verifySessionToken } from "@/lib/auth";
 
 export async function GET(
   _req: NextRequest,
@@ -50,6 +52,12 @@ export async function PATCH(
     if (customerName !== undefined) updateData.customerName = customerName || null;
     if (customerPhone !== undefined) updateData.customerPhone = customerPhone || null;
 
+    // اگه شماره‌ی مشتری همین‌جا ثبت/تغییر کرد، مطمئن می‌شیم تو باشگاه مشتریان هم ثبت باشه —
+    // مستقل از اینکه این فاکتور بدهی می‌شه یا نه.
+    if (customerPhone) {
+      await ensureCustomerExists(customerPhone, customerName || existing.customerName);
+    }
+
     const wasDebt = existing.status === "debt";
     const willBeDebt = paymentMethod === "debt";
 
@@ -73,12 +81,15 @@ export async function PATCH(
       await recomputeDebtorTotal(finalDebtorId);
       updateData.status = "debt";
     } else if (paymentMethod !== undefined && !willBeDebt && wasDebt) {
-      // خروج از بدهکاری (مثلاً مشتری الان بدهیش رو پرداخت کرده)
+      // خروج از بدهکاری (مثلاً مشتری الان بدهیش رو پرداخت کرده) — از همون تسویه‌ی مرکزی استفاده می‌کنیم
+      // تا هم debtor_payments ثبت بشه، هم امتیاز وفاداری بهش تعلق بگیره
+      const sessionToken = req.cookies.get("session")?.value;
+      const currentUser = sessionToken ? verifySessionToken(sessionToken) : null;
       const linkedDebts = await db.select().from(debts).where(eq(debts.invoiceId, existing.id));
       const touchedDebtorIds = new Set<number>();
       for (const debt of linkedDebts) {
         if (!debt.isPaid) touchedDebtorIds.add(debt.debtorId);
-        await db.update(debts).set({ isPaid: true, paidAt: new Date() }).where(eq(debts.id, debt.id));
+        await settleDebtRow(debt.id, currentUser?.username || null);
       }
       for (const debtorId of touchedDebtorIds) await recomputeDebtorTotal(debtorId);
       if (status === undefined) updateData.status = "paid";

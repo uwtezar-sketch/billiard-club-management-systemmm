@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { debtors, debts, customers, debtorPayments } from "@/db/schema";
 import { eq, like, desc } from "drizzle-orm";
 import { isSamePerson } from "@/lib/personMatch";
+import { ensureCustomerExists } from "@/lib/customerLink";
 
 export async function GET(req: NextRequest) {
   try {
@@ -50,7 +51,17 @@ export async function POST(req: NextRequest) {
     if (!name) return NextResponse.json({ error: "نام الزامی است" }, { status: 400 });
 
     const allCustomers = await db.select().from(customers);
-    const matchedCustomer = allCustomers.find((c) => isSamePerson({ phone, name }, { phone: c.phone, name: c.name }));
+    let matchedCustomer = allCustomers.find((c) => isSamePerson({ phone, name }, { phone: c.phone, name: c.name })) || null;
+
+    // اگه با اسم/تلفنِ موجود مچ نشد ولی شماره داریم، خودکار به باشگاه مشتریان اضافه‌ش می‌کنیم —
+    // تا این بدهکار هیچ‌وقت «یتیم» نمونه (وگرنه امتیاز وفاداری و Smart Loyalty براش کار نمی‌کنه).
+    if (!matchedCustomer && phone) {
+      const customerId = await ensureCustomerExists(phone, name);
+      if (customerId) {
+        const [freshCustomer] = await db.select().from(customers).where(eq(customers.id, customerId));
+        matchedCustomer = freshCustomer || null;
+      }
+    }
 
     if (matchedCustomer && !force) {
       const allDebtors = await db.select().from(debtors);

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { debtors, debts, debtorPayments } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { recomputeDebtorTotal } from "@/lib/debtorLink";
+import { recomputeDebtorTotal, settleDebtRow } from "@/lib/debtorLink";
+import { verifySessionToken } from "@/lib/auth";
 
 // Add debt to debtor
 export async function POST(
@@ -50,17 +51,22 @@ export async function PATCH(
     const { name, phone, notes, settleAll, debtId } = body;
 
     if (settleAll) {
-      await db.update(debts).set({ isPaid: true, paidAt: new Date() }).where(eq(debts.debtorId, debtorId));
+      const sessionToken = req.cookies.get("session")?.value;
+      const currentUser = sessionToken ? verifySessionToken(sessionToken) : null;
+
+      const unpaidDebts = await db.select().from(debts).where(eq(debts.debtorId, debtorId));
+      for (const debt of unpaidDebts.filter((d) => !d.isPaid)) {
+        await settleDebtRow(debt.id, currentUser?.username || null);
+      }
       const total = await recomputeDebtorTotal(debtorId);
       return NextResponse.json({ success: true, totalDebt: total });
     }
 
     if (debtId) {
-      const [debt] = await db.select().from(debts).where(eq(debts.id, debtId));
-      if (debt && !debt.isPaid) {
-        await db.update(debts).set({ isPaid: true, paidAt: new Date() }).where(eq(debts.id, debtId));
-        await recomputeDebtorTotal(debtorId);
-      }
+      const sessionToken = req.cookies.get("session")?.value;
+      const currentUser = sessionToken ? verifySessionToken(sessionToken) : null;
+      await settleDebtRow(debtId, currentUser?.username || null);
+      await recomputeDebtorTotal(debtorId);
       return NextResponse.json({ success: true });
     }
 

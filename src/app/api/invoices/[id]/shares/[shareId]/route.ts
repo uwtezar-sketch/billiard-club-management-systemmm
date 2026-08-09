@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { invoices, invoiceShares, debts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { findOrCreateDebtor, recomputeDebtorTotal } from "@/lib/debtorLink";
+import { findOrCreateDebtor, recomputeDebtorTotal, settleDebtRow } from "@/lib/debtorLink";
+import { ensureCustomerExists } from "@/lib/customerLink";
+import { verifySessionToken } from "@/lib/auth";
 
 // PATCH /api/invoices/[id]/shares/[shareId]
 // تسویه یا تغییر وضعیت یک سهم مشخص از یک فاکتور تقسیم‌شده
@@ -31,6 +33,11 @@ export async function PATCH(
     const updateData: Record<string, unknown> = {};
     if (label !== undefined) updateData.label = label;
     if (phone !== undefined) updateData.phone = phone;
+
+    // اگه شماره‌ی صاحبِ این سهم همین‌جا ثبت/تغییر کرد، مطمئن می‌شیم تو باشگاه مشتریان هم ثبت باشه
+    if (phone) {
+      await ensureCustomerExists(phone, label || share.label);
+    }
 
     if (status !== undefined) updateData.status = status;
     if (status === "paid") {
@@ -65,12 +72,15 @@ export async function PATCH(
       updateData.debtorId = finalDebtorId;
       await recomputeDebtorTotal(finalDebtorId);
     } else if (!willBeDebt && wasDebt) {
-      // بدهیِ این سهم تسویه شد (یا لغو شد)
+      // بدهیِ این سهم تسویه شد (یا لغو شد) — از همون تسویه‌ی مرکزی استفاده می‌کنیم تا هم
+      // debtor_payments ثبت بشه، هم امتیاز وفاداری بهش تعلق بگیره
+      const sessionToken = req.cookies.get("session")?.value;
+      const currentUser = sessionToken ? verifySessionToken(sessionToken) : null;
       const linkedDebts = await db.select().from(debts).where(eq(debts.shareId, share.id));
       const touchedDebtorIds = new Set<number>();
       for (const debt of linkedDebts) {
         if (!debt.isPaid) touchedDebtorIds.add(debt.debtorId);
-        await db.update(debts).set({ isPaid: true, paidAt: new Date() }).where(eq(debts.id, debt.id));
+        await settleDebtRow(debt.id, currentUser?.username || null);
       }
       for (const debtorId of touchedDebtorIds) await recomputeDebtorTotal(debtorId);
     }

@@ -180,7 +180,7 @@ export default function HistorySection() {
 
   // ── کارتِ اطلاعاتیِ مشتری (بدهی قبلی + امتیاز) تو پنجره‌ی فاکتور ────────────
   const [customerSummary, setCustomerSummary] = useState<
-    Record<string, { customerId: number; name: string; points: number; debts: { date: string; description: string; amount: number }[] } | null>
+    Record<string, { customerId: number | null; name: string; points: number; debts: { date: string; description: string; amount: number }[] } | null>
   >({});
   const [debtDetailsOpen, setDebtDetailsOpen] = useState<Record<string, boolean>>({});
 
@@ -530,7 +530,7 @@ export default function HistorySection() {
 
   // بدهیِ قبلیِ هر گروه (به‌تفکیک شماره‌ی مشتری) — همون endpoint سبکی که برای کارتِ پنجره‌ی فاکتور تکی هم استفاده شد
   const [groupSummary, setGroupSummary] = useState<
-    Record<string, { customerId: number; name: string; points: number; debts: { date: string; description: string; amount: number }[] } | null>
+    Record<string, { customerId: number | null; name: string; points: number; debts: { date: string; description: string; amount: number }[] } | null>
   >({});
 
   useEffect(() => {

@@ -1,7 +1,9 @@
 import { db } from "@/db";
-import { debtors, customers, debts, debtorPayments } from "@/db/schema";
+import { debtors, customers, debts, debtorPayments, invoices, invoiceShares } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { isSamePerson } from "@/lib/personMatch";
+import { ensureCustomerExists } from "@/lib/customerLink";
+import { todayJalaali } from "@/lib/jalaali";
 
 // بدهی واقعیِ فعلیِ یک بدهکار = جمع بدهی‌های بازِ ثبت‌شده منهای جمع پرداخت‌های دستی‌ای که براش ثبت شده.
 // این تابع همیشه از نو محاسبه می‌کنه (نه جمع‌وتفریق تدریجی) تا هیچ‌وقت با ویرایش/حذف بدهی یا پرداخت
@@ -27,10 +29,14 @@ type DebtInput = {
 // (فاکتور معمولی، سهمِ فاکتور تقسیم‌شده، تسویه‌ی دستی) باید از همینجا رد بشه — نه مستقیم insert.
 // اولویت‌ها:
 //  ۱. اگه debtorId مستقیم داده شده (از لیست بدهکاران انتخاب شده) → همون رو استفاده کن.
-//  ۲. وگرنه، اگه اسم/تلفن با یکی از مشتری‌های باشگاه مطابقت داشت:
-//     - اگه اون مشتری قبلاً یک بدهکارِ لینک‌شده داره → همون بدهکار رو استفاده کن (دیگه رکورد دوم ساخته نمی‌شه)
+//  ۲. وگرنه، اگه شماره تلفن داریم → اول مطمئن می‌شیم مشتری تو باشگاه ثبته (یا خودکار می‌سازیمش،
+//     از طریق ensureCustomerExists) تا هیچ‌وقت «بدهکارِ یتیم» ساخته نشه — چون بدون این وصل،
+//     امتیاز وفاداری و Smart Loyalty براش کار نمی‌کنه:
+//     - اگه اون مشتری قبلاً یک بدهکارِ لینک‌شده داره → همون بدهکار رو استفاده کن (رکورد دوم ساخته نمی‌شه)
 //     - وگرنه یک بدهکار جدید بساز و از همون اول به این مشتری وصلش کن
-//  ۳. اگه هیچ مشتری‌ای مطابقت نداشت → مثل قبل، یک بدهکار آزاد (بدون customerId) بساز
+//  ۳. اگه شماره نداریم → مثل قبل، فقط بر اساس نام سعی می‌کنیم به مشتریِ موجود وصل بشیم
+//  ۴. اگه هیچ‌کدوم جواب نداد → یک بدهکار آزاد (بدون customerId) بساز — این فقط وقتی پیش میاد که
+//     اصلاً شماره‌ای در کار نبوده (بدون شماره نمی‌شه مطمئن بود این کیه)
 export async function findOrCreateDebtor(input: DebtInput): Promise<number> {
   if (input.debtorId) {
     const [existing] = await db.select().from(debtors).where(eq(debtors.id, input.debtorId));
@@ -39,6 +45,21 @@ export async function findOrCreateDebtor(input: DebtInput): Promise<number> {
 
   const name = input.newDebtorName || "نامشخص";
   const phone = input.newDebtorPhone || null;
+
+  if (phone) {
+    const customerId = await ensureCustomerExists(phone, name);
+    if (customerId) {
+      const allDebtors = await db.select().from(debtors);
+      const linkedDebtor = allDebtors.find((d) => d.customerId === customerId);
+      if (linkedDebtor) return linkedDebtor.id;
+
+      const [created] = await db
+        .insert(debtors)
+        .values({ name, phone, totalDebt: "0", customerId })
+        .returning();
+      return created.id;
+    }
+  }
 
   const allCustomers = await db.select().from(customers);
   const matchedCustomer = allCustomers.find((c) => isSamePerson({ phone, name }, { phone: c.phone, name: c.name }));
@@ -62,4 +83,35 @@ export async function findOrCreateDebtor(input: DebtInput): Promise<number> {
 
   const [created] = await db.insert(debtors).values({ name, phone, totalDebt: "0" }).returning();
   return created.id;
+}
+
+// این تابع مرکزیِ «تسویه‌ی واقعی»ه برای یک ردیفِ بدهی. هرجای کد که یک debt از حالتِ باز به تسویه‌شده
+// می‌ره، باید از همینجا رد بشه — نه فقط isPaid رو true کنه. سه‌تا کار با هم انجام می‌ده:
+//  ۱. خودِ debt رو paid می‌کنه
+//  ۲. یک رکورد پرداختِ واقعی تو debtor_payments ثبت می‌کنه — این پایه‌ی محاسبه‌ی «واقعاً پرداخت‌کرده»
+//     و امتیاز وفاداریه؛ بدون این رکورد، اون پول همیشه ناپیدا می‌مونه و مشتری هیچ‌وقت امتیازش رو نمی‌گیره.
+//  ۳. اگه این بدهی از یک فاکتور/سهمِ مشخص اومده، وضعیتِ اون فاکتور/سهم رو هم به paid برمی‌گردونه —
+//     وگرنه برای همیشه debt می‌موند، حتی بعد از تسویه‌ی کامل.
+// توجه: recomputeDebtorTotal بعدش جدا صدا زده می‌شه (چون معمولاً چندتا debt با هم تسویه می‌شن و
+// نیازی نیست هر بار دوباره کل جمع رو حساب کنیم).
+export async function settleDebtRow(debtId: number, byUsername: string | null): Promise<void> {
+  const [debt] = await db.select().from(debts).where(eq(debts.id, debtId));
+  if (!debt || debt.isPaid) return;
+
+  await db.update(debts).set({ isPaid: true, paidAt: new Date() }).where(eq(debts.id, debt.id));
+
+  await db.insert(debtorPayments).values({
+    debtorId: debt.debtorId,
+    amount: debt.amount,
+    note: debt.invoiceNumber ? `تسویه‌ی بدهیِ فاکتور ${debt.invoiceNumber}` : debt.description || "تسویه‌ی بدهی",
+    jalaaliDate: todayJalaali(),
+    byUsername,
+  });
+
+  if (debt.invoiceId) {
+    await db.update(invoices).set({ status: "paid", settledAt: new Date() }).where(eq(invoices.id, debt.invoiceId));
+  }
+  if (debt.shareId) {
+    await db.update(invoiceShares).set({ status: "paid", settledAt: new Date() }).where(eq(invoiceShares.id, debt.shareId));
+  }
 }

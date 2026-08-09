@@ -5,6 +5,7 @@ import { eq, desc, like, and, or, gte, lte, inArray } from "drizzle-orm";
 import { toJalaali, generateInvoiceNumber } from "@/lib/jalaali";
 import { verifySessionToken } from "@/lib/auth";
 import { findOrCreateDebtor, recomputeDebtorTotal } from "@/lib/debtorLink";
+import { ensureCustomerExists } from "@/lib/customerLink";
 
 export async function GET(req: NextRequest) {
   try {
@@ -173,6 +174,13 @@ export async function POST(req: NextRequest) {
       })
       .returning();
 
+    // مستقیم بعد از ساختِ فاکتور، مشتری رو ثبت می‌کنیم (اگه شماره داره) — مستقل از اینکه پرداخت‌شده،
+    // در‌انتظار، یا بدهیه؛ چون هدف اینه هیچ‌وقت یه فاکتورِ دارایِ تلفن بدون مشتریِ ثبت‌شده نمونه
+    // (وگرنه امتیاز وفاداری و Smart Loyalty براش کار نمی‌کنه).
+    if (!isSplit && customerPhone) {
+      await ensureCustomerExists(customerPhone, customerName);
+    }
+
     // Insert cafe items
     if (cafeItems && cafeItems.length > 0) {
       // آیتم‌های کافه ممکنه به یه cafeItemId قدیمی/حذف‌شده از منو اشاره کنن
@@ -251,6 +259,10 @@ export async function POST(req: NextRequest) {
       }>) {
         const shareAmount = Number(share.amount || 0);
         let shareDebtorId: number | null = null;
+
+        if (share.phone) {
+          await ensureCustomerExists(share.phone, share.label);
+        }
 
         const [insertedShare] = await db
           .insert(invoiceShares)

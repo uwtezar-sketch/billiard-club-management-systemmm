@@ -7,8 +7,11 @@ import { isSamePerson } from "@/lib/personMatch";
 import { getPointValue, calcEarnedPoints, getRedeemedPoints } from "@/lib/loyalty";
 
 // GET /api/customers/quick-summary?phones=09121234567,09123334444
-// برای کارتِ اطلاعاتیِ مشتری تو پنجره‌ی فاکتور (تاریخچه): برای هر شماره، اگه تو باشگاه مشتریان ثبت
-// شده باشه، بدهیِ بازِ فعلی (ریز به ریز) + امتیازِ موجودش رو برمی‌گردونه. اگه ثبت نشده، مقدارش null.
+// برای کارتِ اطلاعاتیِ مشتری تو پنجره‌ی فاکتور و بخشِ «فاکتورهای در انتظارِ چندباره»: برای هر شماره،
+// بدهیِ بازِ فعلی (ریز به ریز) رو برمی‌گردونه — این نیازی نداره که شخص حتماً تو «باشگاه مشتریان»
+// ثبت شده باشه، چون بدهکار می‌تونه بدون عضویت تو باشگاه هم وجود داشته باشه (مثلاً فقط از رو فاکتور
+// به بدهکاری منتقل شده). امتیاز فقط برای کسایی که واقعاً تو باشگاه مشتریان ثبتن حساب می‌شه (چون
+// مفهوم امتیاز صرفاً مالِ همون‌جاست).
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -17,12 +20,16 @@ export async function GET(req: NextRequest) {
 
     if (requestedPhones.length === 0) return NextResponse.json({});
 
-    const allCustomers = await db.select().from(customers);
-    const matched = allCustomers.filter((c) => requestedPhones.includes(normalizePhone(c.phone)));
-
-    if (matched.length === 0) return NextResponse.json({});
-
     const allDebtors = await db.select().from(debtors);
+    const allCustomers = await db.select().from(customers);
+
+    // برای هر شماره‌ی درخواست‌شده، اول دنبال بدهکار می‌گردیم (مستقل از عضویت تو باشگاه مشتریان)،
+    // بعد اگه تو باشگاه مشتریان هم ثبت بود، امتیازش رو اضافه می‌کنیم.
+    const relevantDebtors = allDebtors.filter((d) => requestedPhones.includes(normalizePhone(d.phone)));
+    const relevantCustomers = allCustomers.filter((c) => requestedPhones.includes(normalizePhone(c.phone)));
+
+    if (relevantDebtors.length === 0 && relevantCustomers.length === 0) return NextResponse.json({});
+
     const allInvoices = await db.select().from(invoices);
     const splitInvoices = allInvoices.filter((i) => i.isSplit);
     const allShares = splitInvoices.length
@@ -32,34 +39,23 @@ export async function GET(req: NextRequest) {
 
     const result: Record<
       string,
-      { customerId: number; name: string; points: number; debts: { date: string; description: string; amount: number }[] } | null
+      { customerId: number | null; name: string; points: number; debts: { date: string; description: string; amount: number }[] } | null
     > = {};
 
-    for (const phone of requestedPhones) result[phone] = null;
+    for (const phone of requestedPhones) {
+      const debtor = relevantDebtors.find((d) => normalizePhone(d.phone) === phone) || null;
+      const customer = relevantCustomers.find((c) => normalizePhone(c.phone) === phone) || null;
 
-    for (const c of matched) {
-      const person = { phone: c.phone, name: c.name };
-      const matchingDebtor = allDebtors.find((d) => d.customerId === c.id) || allDebtors.find((d) => isSamePerson(person, { phone: d.phone, name: d.name }));
-
-      // ── امتیاز — دقیقاً همون منطق loyalty.ts، شاملِ پرداخت‌های دستیِ بدهیِ واقعاً انجام‌شده ──
-      const matchingInvoices = allInvoices.filter((i) => !i.isSplit && isSamePerson(person, { phone: i.customerPhone, name: i.customerName }));
-      const matchingShares = allShares.filter((sh) => isSamePerson(person, { phone: sh.phone, name: sh.label }));
-      let totalPaid =
-        matchingInvoices.filter((i) => i.status === "paid").reduce((s, i) => s + Number(i.totalAmount), 0) +
-        matchingShares.filter((sh) => sh.status === "paid").reduce((s, sh) => s + Number(sh.amount), 0);
-      if (matchingDebtor) {
-        const myPayments = await db.select().from(debtorPayments).where(eq(debtorPayments.debtorId, matchingDebtor.id));
-        totalPaid += myPayments.reduce((s, p) => s + Number(p.amount), 0);
+      if (!debtor && !customer) {
+        result[phone] = null;
+        continue;
       }
-      const earnedPoints = calcEarnedPoints(totalPaid, pointValue);
-      const redeemedPoints = await getRedeemedPoints(c.id);
-      const points = Math.max(0, earnedPoints - redeemedPoints);
 
-      // ── بدهیِ بازِ فعلی، ریز به ریز، قدیمی‌ترین اول ─────────────────────────
+      // ── بدهیِ بازِ فعلی، ریز به ریز، قدیمی‌ترین اول — از رو خودِ بدهکار، بدون نیاز به عضویت باشگاه ──
       let debtRows: { date: string; description: string; amount: number }[] = [];
-      if (matchingDebtor) {
-        const myUnpaid = await db.select().from(debts).where(eq(debts.debtorId, matchingDebtor.id));
-        debtRows = myUnpaid
+      if (debtor) {
+        const myDebts = await db.select().from(debts).where(eq(debts.debtorId, debtor.id));
+        debtRows = myDebts
           .filter((d) => !d.isPaid)
           .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
           .map((d) => ({
@@ -69,9 +65,35 @@ export async function GET(req: NextRequest) {
           }));
       }
 
-      const entry = { customerId: c.id, name: c.name, points, debts: debtRows };
-      const normalized = normalizePhone(c.phone);
-      if (requestedPhones.includes(normalized)) result[normalized] = entry;
+      // ── امتیاز — فقط اگه واقعاً تو باشگاه مشتریان ثبت شده باشه (دقیقاً همون منطق loyalty.ts) ──
+      let points = 0;
+      if (customer) {
+        const person = { phone: customer.phone, name: customer.name };
+        const matchingInvoices = allInvoices.filter((i) => !i.isSplit && isSamePerson(person, { phone: i.customerPhone, name: i.customerName }));
+        const matchingShares = allShares.filter((sh) => isSamePerson(person, { phone: sh.phone, name: sh.label }));
+        let totalPaid =
+          matchingInvoices.filter((i) => i.status === "paid").reduce((s, i) => s + Number(i.totalAmount), 0) +
+          matchingShares.filter((sh) => sh.status === "paid").reduce((s, sh) => s + Number(sh.amount), 0);
+        if (debtor) {
+          const myPayments = await db.select().from(debtorPayments).where(eq(debtorPayments.debtorId, debtor.id));
+          totalPaid += myPayments.reduce((s, p) => s + Number(p.amount), 0);
+        }
+        const earnedPoints = calcEarnedPoints(totalPaid, pointValue);
+        const redeemedPoints = await getRedeemedPoints(customer.id);
+        points = Math.max(0, earnedPoints - redeemedPoints);
+      }
+
+      if (debtRows.length === 0 && points <= 0) {
+        result[phone] = null;
+        continue;
+      }
+
+      result[phone] = {
+        customerId: customer?.id ?? null,
+        name: customer?.name || debtor?.name || "",
+        points,
+        debts: debtRows,
+      };
     }
 
     return NextResponse.json(result);
