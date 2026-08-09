@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import Modal from "./Modal";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./Toast";
-import { formatPrice, todayJalaali, toJalaaliFullLabel } from "@/lib/jalaali";
+import { formatPrice, todayJalaali, toJalaaliFullLabel, formatDuration } from "@/lib/jalaali";
 import CustomerNameAutocomplete from "./CustomerNameAutocomplete";
 
 interface Debt {
@@ -57,6 +57,22 @@ interface MergeSuggestion {
   reason: string;
 }
 
+interface InvoiceDetail {
+  id: number;
+  invoiceNumber: string;
+  tableName: string | null;
+  tableType: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  durationMinutes: number | null;
+  gamePrice: string;
+  cafeTotal: string;
+  totalAmount: string;
+  jalaaliDate: string | null;
+  notes: string | null;
+  items: { name: string; quantity: number; totalPrice: string }[];
+}
+
 const OVERDUE_DAYS = 14;
 
 function daysSince(dateStr: string) {
@@ -87,6 +103,25 @@ export default function DebtorsSection() {
 
   // ── ویرایش/حذف بدهی‌های ثبت‌شده و پرداخت‌های دستی (برای اصلاح اشتباهات) ──────
   const [editDebtModal, setEditDebtModal] = useState<Debt | null>(null);
+  const [invoiceDetailModal, setInvoiceDetailModal] = useState<{ loading: boolean; invoice: InvoiceDetail | null } | null>(null);
+
+  async function openInvoiceDetail(invoiceId: number) {
+    setInvoiceDetailModal({ loading: true, invoice: null });
+    try {
+      const res = await fetch(`/api/invoices/${invoiceId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setInvoiceDetailModal({ loading: false, invoice: data });
+      } else {
+        setInvoiceDetailModal(null);
+        showToast("جزئیات این فاکتور پیدا نشد", "error");
+      }
+    } catch {
+      setInvoiceDetailModal(null);
+      showToast("خطا در دریافت جزئیات فاکتور", "error");
+    }
+  }
+
   const [editDebtForm, setEditDebtForm] = useState({ amount: "", description: "" });
   const [deleteDebtId, setDeleteDebtId] = useState<number | null>(null);
   const [editPaymentModal, setEditPaymentModal] = useState<{ debtorId: number; payment: DebtorPayment } | null>(null);
@@ -527,8 +562,14 @@ export default function DebtorsSection() {
                                 : { background: "#3d101622", border: "1px solid #8f1d2c55" }
                             }
                           >
-                            <div>
-                              <div className="text-white">{debt.description || "بدهی"}</div>
+                            <div
+                              className={debt.invoiceId ? "cursor-pointer" : ""}
+                              onClick={() => debt.invoiceId && openInvoiceDetail(debt.invoiceId)}
+                            >
+                              <div className="text-white">
+                                {debt.description || "بدهی"}
+                                {debt.invoiceId && <span className="text-[10px] mr-1" style={{ color: "#5ecfe0" }}>🔍 جزئیات</span>}
+                              </div>
                               <div className="text-xs text-slate-400">
                                 {debt.jalaaliDate}
                                 {debt.invoiceNumber && ` | فاکتور ${debt.invoiceNumber}`}
@@ -866,6 +907,63 @@ export default function DebtorsSection() {
           </div>
           <button className="btn btn-primary btn-full" onClick={handleSavePaymentEdit}>💾 ذخیره</button>
         </div>
+      </Modal>
+
+      {/* Invoice Detail (جزئیات فاکتور از رو یک ردیف بدهی) */}
+      <Modal
+        open={!!invoiceDetailModal}
+        onClose={() => setInvoiceDetailModal(null)}
+        title={invoiceDetailModal?.invoice ? `فاکتور ${invoiceDetailModal.invoice.invoiceNumber}` : "جزئیات فاکتور"}
+      >
+        {invoiceDetailModal?.loading && <div className="text-center text-slate-500 py-6">در حال بارگذاری...</div>}
+        {invoiceDetailModal?.invoice && (
+          <div className="space-y-3 text-sm">
+            <div className="grid grid-cols-2 gap-2 rounded-lg p-3" style={{ background: "#0e1512" }}>
+              <div><span className="text-slate-400">میز:</span> <span className="text-white">{invoiceDetailModal.invoice.tableName || "—"}</span></div>
+              <div><span className="text-slate-400">تاریخ:</span> <span className="text-white">{invoiceDetailModal.invoice.jalaaliDate || "—"}</span></div>
+              {invoiceDetailModal.invoice.startTime && (
+                <div><span className="text-slate-400">شروع:</span> <span className="text-white">{new Date(invoiceDetailModal.invoice.startTime).toTimeString().slice(0, 5)}</span></div>
+              )}
+              {invoiceDetailModal.invoice.endTime && (
+                <div><span className="text-slate-400">پایان:</span> <span className="text-white">{new Date(invoiceDetailModal.invoice.endTime).toTimeString().slice(0, 5)}</span></div>
+              )}
+              {invoiceDetailModal.invoice.durationMinutes != null && (
+                <div><span className="text-slate-400">مدت بازی:</span> <span className="text-white">{formatDuration(invoiceDetailModal.invoice.durationMinutes)}</span></div>
+              )}
+            </div>
+
+            {invoiceDetailModal.invoice.items.length > 0 && (
+              <div>
+                <div className="text-xs text-slate-500 mb-1">☕ سفارش‌های کافه</div>
+                <div className="space-y-1">
+                  {invoiceDetailModal.invoice.items.map((it, i) => (
+                    <div key={i} className="flex justify-between text-xs rounded px-2 py-1" style={{ background: "#0e1512" }}>
+                      <span className="text-white">{it.name} × {it.quantity.toLocaleString("fa-IR")}</span>
+                      <span className="text-slate-400">{formatPrice(Number(it.totalPrice))}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-lg p-2 text-center" style={{ background: "#0e1512" }}>
+                <div className="text-white font-bold">{formatPrice(Number(invoiceDetailModal.invoice.gamePrice))}</div>
+                <div className="text-slate-500">میز</div>
+              </div>
+              <div className="rounded-lg p-2 text-center" style={{ background: "#0e1512" }}>
+                <div className="text-white font-bold">{formatPrice(Number(invoiceDetailModal.invoice.cafeTotal))}</div>
+                <div className="text-slate-500">کافه</div>
+              </div>
+            </div>
+
+            {invoiceDetailModal.invoice.notes && (
+              <div className="text-xs text-slate-400">📝 {invoiceDetailModal.invoice.notes}</div>
+            )}
+
+            <div className="text-left font-bold text-white" dir="ltr">جمع: {formatPrice(Number(invoiceDetailModal.invoice.totalAmount))}</div>
+          </div>
+        )}
       </Modal>
 
       <ConfirmDialog

@@ -45,16 +45,23 @@ interface Debtor {
   phone: string | null;
 }
 
+interface LoyaltyDetail {
+  loyaltyPoints: number;
+  smartLoyalty: { effectivePointValue: number; maxDiscountPercent: number; score: number; tier: string; mode: string };
+}
+
 interface ShareForm {
   key: string;
   label: string;
   phone: string;
-  amount: string; // متن، برای راحتی ویرایش دستی
+  amount: string; // متن، برای راحتی ویرایش دستی (مبلغ ناخالص، قبل از تخفیف امتیازی)
   status: "paid" | "debt" | "pending";
   paymentMethod: "cash" | "card" | null; // فقط وقتی status='paid'
   debtorId: number | null;
   newDebtorName: string;
   newDebtorPhone: string;
+  usePoints: boolean;
+  pointsInput: string;
 }
 
 interface InvoiceModalProps {
@@ -105,7 +112,7 @@ export default function InvoiceModal({
   // ── امتیاز وفاداری هنگام تسویه (Smart Loyalty) ────────────────────────
   const normalizedInvoicePhone = normalizePhone(customerPhone);
   const matchedCustomer = normalizedInvoicePhone.length >= 10 ? customerDirectory.find((c) => normalizePhone(c.phone) === normalizedInvoicePhone) || null : null;
-  const [loyaltyDetail, setLoyaltyDetail] = useState<{ loyaltyPoints: number; smartLoyalty: { effectivePointValue: number; maxDiscountPercent: number; score: number; tier: string; mode: string } } | null>(null);
+  const [loyaltyDetail, setLoyaltyDetail] = useState<LoyaltyDetail | null>(null);
   const [usePoints, setUsePoints] = useState(false);
   const [pointsInput, setPointsInput] = useState("");
 
@@ -146,6 +153,8 @@ export default function InvoiceModal({
       debtorId: null,
       newDebtorName: "",
       newDebtorPhone: "",
+      usePoints: false,
+      pointsInput: "",
     };
   }
 
@@ -187,6 +196,43 @@ export default function InvoiceModal({
       fetch("/api/debtors").then((r) => r.json()).then((d) => setDebtors(Array.isArray(d) ? d : []));
     }
   }, [paymentMethod, isSplitMode]);
+
+  // ── امتیاز وفاداری برای سهم‌های فاکتورِ تقسیم‌شده — هر سهم جدا شناسایی و سقفش جدا حساب می‌شه ──
+  const [shareLoyaltyCache, setShareLoyaltyCache] = useState<Record<number, LoyaltyDetail>>({});
+
+  function getShareCustomerId(phone: string): number | null {
+    const normalized = normalizePhone(phone);
+    if (normalized.length < 10) return null;
+    return customerDirectory.find((c) => normalizePhone(c.phone) === normalized)?.id ?? null;
+  }
+
+  useEffect(() => {
+    const idsNeeded = [...new Set(shares.map((s) => getShareCustomerId(s.phone)).filter((id): id is number => id !== null))].filter(
+      (id) => !(id in shareLoyaltyCache)
+    );
+    idsNeeded.forEach((id) => {
+      fetch(`/api/customers/${id}`)
+        .then((r) => r.json())
+        .then((d) => setShareLoyaltyCache((prev) => ({ ...prev, [id]: { loyaltyPoints: d.loyaltyPoints || 0, smartLoyalty: d.smartLoyalty } })))
+        .catch(() => {});
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shares.map((s) => s.phone).join(","), customerDirectory]);
+
+  // برای یک سهم مشخص: مشتری مچ‌شده، حداکثر امتیازِ قابل‌استفاده (با سقفِ درصدی روی همون سهم)، و مبلغ نهایی بعد از تخفیف
+  function shareLoyaltyInfo(share: ShareForm) {
+    const customerId = getShareCustomerId(share.phone);
+    const detail = customerId !== null ? shareLoyaltyCache[customerId] : null;
+    const grossAmount = Number(share.amount) || 0;
+    if (!detail || detail.loyaltyPoints <= 0 || grossAmount <= 0) return null;
+    const effectivePointValue = detail.smartLoyalty.effectivePointValue;
+    const maxDiscountPercent = detail.smartLoyalty.maxDiscountPercent;
+    const maxPointsByCap = effectivePointValue > 0 ? Math.floor((grossAmount * (maxDiscountPercent / 100)) / effectivePointValue) : 0;
+    const maxRedeemable = Math.max(0, Math.min(detail.loyaltyPoints, maxPointsByCap));
+    const pointsToRedeem = share.usePoints ? Math.max(0, Math.min(Number(share.pointsInput) || 0, maxRedeemable)) : 0;
+    const discount = pointsToRedeem * effectivePointValue;
+    return { customerId: customerId as number, detail, grossAmount, effectivePointValue, maxDiscountPercent, maxRedeemable, pointsToRedeem, discount, finalAmount: Math.max(0, grossAmount - discount) };
+  }
 
   const actualEnd = new Date();
   if (endTime) {
@@ -292,11 +338,14 @@ export default function InvoiceModal({
         notes,
       };
 
+      // برای هر سهم، اطلاعات امتیازِ استفاده‌شده رو از قبل حساب می‌کنیم — هم برای مبلغ نهایی، هم برای ثبت بعد از موفقیت
+      const shareLoyaltyResults = shares.map((s) => ({ share: s, info: shareLoyaltyInfo(s) }));
+
       if (isSplitMode) {
-        body.shares = shares.map((s) => ({
+        body.shares = shareLoyaltyResults.map(({ share: s, info }) => ({
           label: s.label || "بدون‌نام",
           phone: s.phone || undefined,
-          amount: Number(s.amount) || 0,
+          amount: info ? info.finalAmount : Number(s.amount) || 0,
           status: s.status,
           paymentMethod: s.status === "paid" ? s.paymentMethod || "card" : s.status === "debt" ? "debt" : null,
           debtorId: s.status === "debt" ? s.debtorId || undefined : undefined,
@@ -344,6 +393,27 @@ export default function InvoiceModal({
             });
           } catch {
             // فاکتور با موفقیت ثبت شده؛ اگه ثبتِ استفاده از امتیاز شکست بخوره، جلوی کارِ کارمند رو نمی‌گیریم
+          }
+        }
+        if (isSplitMode) {
+          for (const { share: s, info } of shareLoyaltyResults) {
+            if (!info || info.pointsToRedeem <= 0) continue;
+            try {
+              await fetch(`/api/customers/${info.customerId}/points`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  points: info.pointsToRedeem,
+                  note: createdInvoice?.invoiceNumber
+                    ? `تخفیف هنگام تسویه سهم «${s.label}» از فاکتور ${createdInvoice.invoiceNumber}`
+                    : `تخفیف هنگام تسویه سهم «${s.label}»`,
+                  capBasisAmount: info.grossAmount,
+                  invoiceId: createdInvoice?.id || undefined,
+                }),
+              });
+            } catch {
+              // فاکتور ثبت شده؛ شکستِ ثبتِ امتیاز یک سهم نباید جلوی بقیه رو بگیره
+            }
           }
         }
         onSuccess();
@@ -652,6 +722,43 @@ export default function InvoiceModal({
                     )}
                   </div>
                 )}
+
+                {(() => {
+                  const info = shareLoyaltyInfo(s);
+                  if (!info) return null;
+                  return (
+                    <div className="rounded-lg p-2" style={{ background: "#0e1512", border: "1px solid #2f6b4f" }}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px]" style={{ color: "#5ee89b" }}>
+                          🎁 {info.detail.loyaltyPoints.toLocaleString("fa-IR")} امتیاز — حداکثر {info.maxRedeemable.toLocaleString("fa-IR")} روی این سهم
+                        </span>
+                        <button
+                          className={`btn btn-xs ${s.usePoints ? "btn-primary" : "btn-secondary"}`}
+                          onClick={() =>
+                            updateShare(s.key, s.usePoints ? { usePoints: false, pointsInput: "" } : { usePoints: true, pointsInput: String(info.maxRedeemable) })
+                          }
+                        >
+                          {s.usePoints ? "✕ لغو" : "استفاده"}
+                        </button>
+                      </div>
+                      {s.usePoints && (
+                        <div className="mt-1.5 space-y-1">
+                          <input
+                            type="number"
+                            className="form-input"
+                            value={s.pointsInput}
+                            onChange={(e) => updateShare(s.key, { pointsInput: e.target.value })}
+                            dir="ltr"
+                            max={info.maxRedeemable}
+                          />
+                          <div className="text-[11px] text-green-400">
+                            تخفیف: -{formatPrice(info.discount)} → مبلغ نهایی این سهم: {formatPrice(info.finalAmount)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             ))}
 

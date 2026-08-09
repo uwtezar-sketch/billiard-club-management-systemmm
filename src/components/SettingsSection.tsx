@@ -262,13 +262,16 @@ export default function SettingsSection() {
       <div className="card" style={{ borderColor: "#2f6b4f" }}>
         <h2 className="text-lg font-bold text-white mb-1">🎁 باشگاه امتیازی</h2>
         <div className="text-xs text-slate-500 mb-4">
-          امتیاز خودکار از رویِ مجموع واقعاً پرداخت‌شده‌ی هر مشتری محاسبه می‌شه — نیازی به کار دستی نیست
+          امتیاز خودکار از رویِ مجموع واقعاً پرداخت‌شده‌ی هر مشتری محاسبه می‌شه — نیازی به کار دستی نیست.
+          این با «ارزش هر امتیاز» تو کارت Smart Loyalty پایین فرق داره: این یکی می‌گه چقدر خرج مشتری = ۱ امتیاز؛ اون یکی می‌گه هر امتیاز موقع خرج‌کردن چقدر می‌ارزه.
         </div>
         <div>
-          <label className="block text-xs text-slate-400 mb-1">هر چند تومان پرداخت‌شده = ۱ امتیاز</label>
+          <label className="block text-xs text-slate-400 mb-1">هر چند تومان پرداخت‌شده = ۱ امتیاز (پیش‌فرض و توصیه‌شده: ۱۰٬۰۰۰)</label>
           <input
             className="form-input"
             type="number"
+            min="1000"
+            step="1000"
             dir="ltr"
             value={settings.loyalty_point_value}
             onChange={(e) => setSettings((p) => ({ ...p, loyalty_point_value: e.target.value }))}

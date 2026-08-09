@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { customers, invoices, invoiceShares, customerPointRedemptions } from "@/db/schema";
+import { customers, invoices, invoiceShares, debtors, debtorPayments, customerPointRedemptions } from "@/db/schema";
 import { eq, desc, inArray } from "drizzle-orm";
 import { verifySessionToken } from "@/lib/auth";
 import { todayJalaali } from "@/lib/jalaali";
@@ -43,9 +43,18 @@ export async function POST(
       : [];
     const matchingInvoices = allInvoices.filter((i) => !i.isSplit && isSamePerson(person, { phone: i.customerPhone, name: i.customerName }));
     const matchingShares = allShares.filter((sh) => isSamePerson(person, { phone: sh.phone, name: sh.label }));
-    const totalPaid =
+    let totalPaid =
       matchingInvoices.filter((i) => i.status === "paid").reduce((s, i) => s + Number(i.totalAmount), 0) +
       matchingShares.filter((sh) => sh.status === "paid").reduce((s, sh) => s + Number(sh.amount), 0);
+
+    // پرداخت‌های دستیِ بدهی که واقعاً انجام شده رو هم لحاظ می‌کنیم — یه مشتری که بدهی می‌گیره و بعداً
+    // (حتی چند روز دیرتر) تسویه می‌کنه، باید بابت اون پول امتیاز بگیره.
+    const allDebtors = await db.select().from(debtors);
+    const matchingDebtor = allDebtors.find((d) => d.customerId === customerId) || allDebtors.find((d) => isSamePerson(person, { phone: d.phone, name: d.name }));
+    if (matchingDebtor) {
+      const myPayments = await db.select().from(debtorPayments).where(eq(debtorPayments.debtorId, matchingDebtor.id));
+      totalPaid += myPayments.reduce((s, p) => s + Number(p.amount), 0);
+    }
 
     const pointValue = await getPointValue();
     const earnedPoints = calcEarnedPoints(totalPaid, pointValue);

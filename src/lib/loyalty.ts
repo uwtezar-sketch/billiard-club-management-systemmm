@@ -2,12 +2,19 @@ import { db } from "@/db";
 import { customerPointRedemptions, settings } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-const DEFAULT_POINT_VALUE = 10000; // پیش‌فرض: هر ۱۰٬۰۰۰ تومان واقعاً پرداخت‌شده = ۱ امتیاز
+// نرخِ کسبِ امتیاز: هر ۱۰٬۰۰۰ تومان واقعاً پرداخت‌شده = ۱ امتیاز.
+// این کاملاً جدا از «ارزش هر امتیاز هنگام استفاده» (۵۰۰ تومان، تو src/lib/loyaltyReliability.ts) هست —
+// اون یکی می‌گه هر امتیاز موقع خرج‌کردن چقدر می‌ارزه، این یکی می‌گه چقدر خرج مشتری = ۱ امتیاز کسب می‌کنه.
+const DEFAULT_POINT_VALUE = 10000;
+// اگه یه وقت تو تنظیمات یه عدد خیلی کوچیک (مثلاً به‌اشتباه همون ۵۰۰ تومانِ «ارزش هر امتیاز» به‌جای
+// «نرخ کسب امتیاز» ذخیره شده باشه) نباید بذاریم امتیازها به‌شکل غیرمنطقی زیاد حساب بشن — زیر این
+// آستانه رو نامعتبر در نظر می‌گیریم و به پیش‌فرض برمی‌گردیم.
+const MIN_SANE_POINT_VALUE = 1000;
 
 export async function getPointValue(): Promise<number> {
   const [row] = await db.select().from(settings).where(eq(settings.key, "loyalty_point_value"));
   const val = row ? Number(row.value) : DEFAULT_POINT_VALUE;
-  return val > 0 ? val : DEFAULT_POINT_VALUE;
+  return val >= MIN_SANE_POINT_VALUE ? val : DEFAULT_POINT_VALUE;
 }
 
 // امتیازِ کسب‌شده همیشه از رویِ totalPaid (مجموع واقعاً پرداخت‌شده) حساب می‌شه، نه از یک ستونِ ذخیره‌شده —

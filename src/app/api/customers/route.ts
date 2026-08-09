@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { customers, invoices, invoiceShares, debtors, debts, customerPointRedemptions } from "@/db/schema";
+import { customers, invoices, invoiceShares, debtors, debts, debtorPayments, customerPointRedemptions } from "@/db/schema";
 import { like, or, inArray, eq } from "drizzle-orm";
 import { normalizePhone } from "@/lib/phone";
 import { normalizeName, isSamePerson } from "@/lib/personMatch";
@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
       : [];
     const allDebtors = await db.select().from(debtors);
     const unpaidDebts = await db.select().from(debts).where(eq(debts.isPaid, false));
+    const allDebtorPayments = await db.select().from(debtorPayments);
     const allRedemptions = await db.select().from(customerPointRedemptions);
     const redeemedByCustomer = new Map<number, number>();
     for (const r of allRedemptions) {
@@ -78,6 +79,13 @@ export async function GET(req: NextRequest) {
       // بدهی فعلاً بازِ این مشتری (از جدول بدهکاران، که با تسویه‌شدن به‌روز می‌مونه)
       const matchingDebtor = allDebtors.find((d) => d.customerId === c.id) || allDebtors.find((d) => isSamePerson(person, { phone: d.phone, name: d.name }));
       const outstandingDebt = matchingDebtor ? Number(matchingDebtor.totalDebt) : 0;
+
+      // پرداخت‌های دستیِ بدهی که واقعاً انجام شده رو هم به «واقعاً پرداخت‌شده» اضافه می‌کنیم — چون مشتری‌ای
+      // که بدهی می‌گیره و بعداً (حتی چند روز دیرتر) تسویه می‌کنه، باید بابت اون پول امتیاز بگیره.
+      // فاکتور/سهمِ با وضعیت debt هیچ‌وقت مستقیم شمرده نمی‌شه (بالا)، پس این جمع‌زدن باعث دوبار‌شمردن نمی‌شه.
+      if (matchingDebtor) {
+        totalPaid += allDebtorPayments.filter((p) => p.debtorId === matchingDebtor.id).reduce((s, p) => s + Number(p.amount), 0);
+      }
 
       // قدیمی‌ترین بدهیِ بازِ این مشتری چند روزه که تسویه نشده (برای تشخیص «بدهکار مزمن»)
       let oldestUnpaidDebtDays: number | null = null;

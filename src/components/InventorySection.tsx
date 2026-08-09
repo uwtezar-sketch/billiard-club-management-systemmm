@@ -12,6 +12,7 @@ interface InventoryItem {
   lastUpdatedAt: string;
   lastUpdatedByUsername: string | null;
   status: "out" | "low" | "ok";
+  createdAt: string;
 }
 
 const STATUS_MAP: Record<string, { label: string; short: string; color: string; bg: string }> = {
@@ -40,6 +41,8 @@ export default function InventorySection() {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [onlyLow, setOnlyLow] = useState(false);
+  const [sortBy, setSortBy] = useState<"name" | "date">("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [addModal, setAddModal] = useState(false);
   const [editModal, setEditModal] = useState<InventoryItem | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -140,6 +143,13 @@ export default function InventorySection() {
     return acc;
   }, {} as Record<string, InventoryItem[]>);
 
+  for (const cat of Object.keys(grouped)) {
+    grouped[cat].sort((a, b) => {
+      const cmp = sortBy === "name" ? a.name.localeCompare(b.name, "fa") : new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }
+
   const shoppingList = [...items]
     .filter((i) => i.status !== "ok")
     .sort((a, b) => (a.status === b.status ? 0 : a.status === "out" ? -1 : 1));
@@ -175,10 +185,36 @@ export default function InventorySection() {
         </div>
       )}
 
-      <label className="flex items-center gap-2 text-sm text-slate-300">
-        <input type="checkbox" checked={onlyLow} onChange={(e) => setOnlyLow(e.target.checked)} />
-        فقط کم‌ها و تمام‌شده‌ها رو نشون بده
-      </label>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <label className="flex items-center gap-2 text-sm text-slate-300">
+          <input type="checkbox" checked={onlyLow} onChange={(e) => setOnlyLow(e.target.checked)} />
+          فقط کم‌ها و تمام‌شده‌ها رو نشون بده
+        </label>
+        <div className="flex items-center gap-1 text-xs">
+          <button
+            className={`rounded-md px-2 py-1 ${sortBy === "name" ? "text-white" : "text-slate-500"}`}
+            style={{ background: sortBy === "name" ? "#1c2420" : "transparent", border: "1px solid #22282490" }}
+            onClick={() => setSortBy("name")}
+          >
+            الفبایی
+          </button>
+          <button
+            className={`rounded-md px-2 py-1 ${sortBy === "date" ? "text-white" : "text-slate-500"}`}
+            style={{ background: sortBy === "date" ? "#1c2420" : "transparent", border: "1px solid #22282490" }}
+            onClick={() => setSortBy("date")}
+          >
+            تاریخ افزودن
+          </button>
+          <button
+            className="rounded-md px-2 py-1 text-slate-400"
+            style={{ border: "1px solid #22282490" }}
+            onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+            title={sortDir === "asc" ? "صعودی" : "نزولی"}
+          >
+            {sortDir === "asc" ? "↑" : "↓"}
+          </button>
+        </div>
+      </div>
 
       {filtered.length === 0 ? (
         <div className="text-center text-slate-500 py-12">

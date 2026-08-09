@@ -17,6 +17,7 @@ interface CustomerDirEntry {
   outstandingDebt: number;
   oldestUnpaidDebtDays: number | null;
   visitCount: number;
+  loyaltyPoints: number;
 }
 
 const TIER_META: Record<CustomerDirEntry["tier"], { label: string; color: string }> = {
@@ -176,6 +177,7 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
                 outstandingDebt: Number(c.outstandingDebt || 0),
                 oldestUnpaidDebtDays: c.oldestUnpaidDebtDays ?? null,
                 visitCount: Number(c.visitCount || 0),
+                loyaltyPoints: Number(c.loyaltyPoints || 0),
               }))
             : []
         )
@@ -619,6 +621,9 @@ const [loading, setLoading] = useState(true);
                 {matchedStartCustomer.isVip && <span className="badge" style={{ background: "#3a2a0c", color: "#e0b23a" }}>⭐ VIP</span>}
                 {TIER_META[matchedStartCustomer.tier].label && (
                   <span style={{ color: TIER_META[matchedStartCustomer.tier].color }}>{TIER_META[matchedStartCustomer.tier].label}</span>
+                )}
+                {matchedStartCustomer.loyaltyPoints > 0 && (
+                  <span className="badge" style={{ background: "#0d3b2622", color: "#5ee89b" }}>🎁 {matchedStartCustomer.loyaltyPoints.toLocaleString("fa-IR")} امتیاز</span>
                 )}
               </div>
               <div className="text-slate-500 mt-1">{matchedStartCustomer.visitCount.toLocaleString("fa-IR")} بار مراجعه</div>

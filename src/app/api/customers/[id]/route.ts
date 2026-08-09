@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { customers, invoices, invoiceItems, invoiceShares, debtors, debts, customerPointRedemptions } from "@/db/schema";
+import { customers, invoices, invoiceItems, invoiceShares, debtors, debts, debtorPayments, customerPointRedemptions } from "@/db/schema";
 import { eq, inArray, and } from "drizzle-orm";
 import { isSamePerson } from "@/lib/personMatch";
 import { getPointValue, calcEarnedPoints, getRedeemedPoints } from "@/lib/loyalty";
@@ -84,7 +84,7 @@ export async function GET(
     history.sort((a, b) => new Date(b.issuedAt).getTime() - new Date(a.issuedAt).getTime());
 
     const visitCount = history.length;
-    const totalPaid = history.filter((h) => h.status === "paid").reduce((s, h) => s + h.amount, 0);
+    let totalPaid = history.filter((h) => h.status === "paid").reduce((s, h) => s + h.amount, 0);
     const totalDebtCreated = history.filter((h) => h.status === "debt").reduce((s, h) => s + h.amount, 0);
     const totalPendingAmount = history.filter((h) => h.status === "pending").reduce((s, h) => s + h.amount, 0);
     const cafeSpent = matchingInvoices.reduce((s, i) => s + Number(i.cafeTotal || 0), 0);
@@ -113,6 +113,13 @@ export async function GET(
     const allDebtors = await db.select().from(debtors);
     const matchingDebtor = allDebtors.find((d) => d.customerId === customer.id) || allDebtors.find((d) => isSamePerson(person, { phone: d.phone, name: d.name }));
     const outstandingDebt = matchingDebtor ? Number(matchingDebtor.totalDebt) : 0;
+
+    // پرداخت‌های دستیِ بدهی که واقعاً انجام شده رو هم به «واقعاً پرداخت‌شده» اضافه می‌کنیم — چون مشتری‌ای
+    // که بدهی می‌گیره و بعداً (حتی چند روز دیرتر) تسویه می‌کنه، باید بابت اون پول امتیاز بگیره.
+    if (matchingDebtor) {
+      const myPayments = await db.select().from(debtorPayments).where(eq(debtorPayments.debtorId, matchingDebtor.id));
+      totalPaid += myPayments.reduce((s, p) => s + Number(p.amount), 0);
+    }
 
     let oldestUnpaidDebtDays: number | null = null;
     if (matchingDebtor) {
