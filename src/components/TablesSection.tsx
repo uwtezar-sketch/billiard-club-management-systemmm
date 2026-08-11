@@ -214,6 +214,7 @@ const [loading, setLoading] = useState(true);
   const [editStartTime, setEditStartTime] = useState("");
   const [editPrice, setEditPrice] = useState("");
   const [editCustomer, setEditCustomer] = useState("");
+  const [editCustomerPhone, setEditCustomerPhone] = useState("");
   const [editNotes, setEditNotes] = useState("");
 
   const fetchData = useCallback(async () => {
@@ -355,6 +356,7 @@ const [loading, setLoading] = useState(true);
     setEditStartTime("");
     setEditPrice(table.activeSession.pricePerHour);
     setEditCustomer(table.activeSession.customerName || "");
+    setEditCustomerPhone(table.activeSession.customerPhone || "");
     setEditNotes(table.activeSession.notes || "");
   }
 
@@ -363,6 +365,7 @@ const [loading, setLoading] = useState(true);
     const sid = sessionModal.session.id;
     const body: Record<string, unknown> = {};
     if (editCustomer !== (sessionModal.session.customerName || "")) body.customerName = editCustomer;
+    if (editCustomerPhone !== (sessionModal.session.customerPhone || "")) body.customerPhone = editCustomerPhone;
     if (editNotes !== (sessionModal.session.notes || "")) body.notes = editNotes;
     if (editPrice && Number(editPrice) !== Number(sessionModal.session.pricePerHour)) {
       body.pricePerHour = Number(editPrice);
@@ -609,7 +612,7 @@ const [loading, setLoading] = useState(true);
               directory={customerDirectory}
               placeholder="اسم یا شماره تلفن رو تایپ کن..."
               onChange={(name, phone) =>
-                setStartForm((p) => ({ ...p, customerName: name, customerPhone: phone !== undefined ? phone : p.customerPhone }))
+                setStartForm((p) => ({ ...p, customerName: name, customerPhone: phone }))
               }
             />
           </div>
@@ -756,7 +759,21 @@ const [loading, setLoading] = useState(true);
                 <CustomerNameAutocomplete
                   value={editCustomer}
                   directory={customerDirectory}
-                  onChange={(name) => setEditCustomer(name)}
+                  onChange={(name, phone) => {
+                    setEditCustomer(name);
+                    setEditCustomerPhone(phone);
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">شماره تلفن</label>
+                <input
+                  className="form-input"
+                  type="tel"
+                  dir="ltr"
+                  value={editCustomerPhone}
+                  onChange={(e) => setEditCustomerPhone(e.target.value)}
+                  placeholder="09..."
                 />
               </div>
               <div>

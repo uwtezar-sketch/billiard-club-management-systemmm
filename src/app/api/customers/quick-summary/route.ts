@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { customers, invoices, invoiceShares, debtors, debts, debtorPayments } from "@/db/schema";
-import { inArray, eq } from "drizzle-orm";
+import { inArray, eq, isNull, and } from "drizzle-orm";
 import { normalizePhone } from "@/lib/phone";
 import { isSamePerson } from "@/lib/personMatch";
 import { getPointValue, calcEarnedPoints, getRedeemedPoints } from "@/lib/loyalty";
 
 // GET /api/customers/quick-summary?phones=09121234567,09123334444
 // برای کارتِ اطلاعاتیِ مشتری تو پنجره‌ی فاکتور و بخشِ «فاکتورهای در انتظارِ چندباره»: برای هر شماره،
-// بدهیِ بازِ فعلی (ریز به ریز) رو برمی‌گردونه — این نیازی نداره که شخص حتماً تو «باشگاه مشتریان»
-// ثبت شده باشه، چون بدهکار می‌تونه بدون عضویت تو باشگاه هم وجود داشته باشه (مثلاً فقط از رو فاکتور
-// به بدهکاری منتقل شده). امتیاز فقط برای کسایی که واقعاً تو باشگاه مشتریان ثبتن حساب می‌شه (چون
-// مفهوم امتیاز صرفاً مالِ همون‌جاست).
+// بدهیِ بازِ فعلی (ریز به ریز + خلاصه‌ی ناخالص/پرداخت‌شده/مانده) رو برمی‌گردونه — این نیازی نداره که
+// شخص حتماً تو «باشگاه مشتریان» ثبت شده باشه، چون بدهکار می‌تونه بدون عضویت تو باشگاه هم وجود داشته
+// باشه. امتیاز فقط برای کسایی که واقعاً تو باشگاه مشتریان ثبتن حساب می‌شه.
+//
+// «مانده‌ی واقعی» همیشه مستقیم از رویِ debtors.total_debt خونده می‌شه (نه دوباره محاسبه) — چون اون
+// ستون تنها منبع معتبرِ این عدده (توسط recomputeDebtorTotal نگه‌داری می‌شه) و همه‌جای دیگه‌ی اپ
+// (بخش بدهکاران، پروفایل مشتری) هم دقیقاً همون رو می‌خونن؛ اینجا دوباره حساب کردنش فقط ریسکِ
+// ناهماهنگی بین صفحات رو بالا می‌بره.
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -23,8 +27,6 @@ export async function GET(req: NextRequest) {
     const allDebtors = await db.select().from(debtors);
     const allCustomers = await db.select().from(customers);
 
-    // برای هر شماره‌ی درخواست‌شده، اول دنبال بدهکار می‌گردیم (مستقل از عضویت تو باشگاه مشتریان)،
-    // بعد اگه تو باشگاه مشتریان هم ثبت بود، امتیازش رو اضافه می‌کنیم.
     const relevantDebtors = allDebtors.filter((d) => requestedPhones.includes(normalizePhone(d.phone)));
     const relevantCustomers = allCustomers.filter((c) => requestedPhones.includes(normalizePhone(c.phone)));
 
@@ -39,7 +41,15 @@ export async function GET(req: NextRequest) {
 
     const result: Record<
       string,
-      { customerId: number | null; name: string; points: number; debts: { date: string; description: string; amount: number }[] } | null
+      {
+        customerId: number | null;
+        name: string;
+        points: number;
+        grossDebt: number;
+        paidAmount: number;
+        remainingDebt: number;
+        debts: { date: string; description: string; amount: number }[];
+      } | null
     > = {};
 
     for (const phone of requestedPhones) {
@@ -51,18 +61,34 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      // ── بدهیِ بازِ فعلی، ریز به ریز، قدیمی‌ترین اول — از رو خودِ بدهکار، بدون نیاز به عضویت باشگاه ──
+      // ── بدهیِ بازِ فعلی: ریز به ریز (ناخالص، برای شفافیت) + خلاصه‌ی ناخالص/پرداخت‌شده/مانده‌ی واقعی ──
       let debtRows: { date: string; description: string; amount: number }[] = [];
+      let grossDebt = 0;
+      let paidAmount = 0;
+      let remainingDebt = 0;
       if (debtor) {
-        const myDebts = await db.select().from(debts).where(eq(debts.debtorId, debtor.id));
+        const myDebts = await db.select().from(debts).where(and(eq(debts.debtorId, debtor.id), eq(debts.isPaid, false)));
         debtRows = myDebts
-          .filter((d) => !d.isPaid)
           .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
           .map((d) => ({
             date: d.jalaaliDate || new Date(d.createdAt).toLocaleDateString("fa-IR"),
             description: d.description || "بدهی",
             amount: Number(d.amount),
           }));
+        grossDebt = debtRows.reduce((s, d) => s + d.amount, 0);
+
+        // فقط پرداخت‌های دستیِ *غیرِ وصل‌شده* (بدون debt_id) — همون چیزی که واقعاً از بدهیِ باز کم می‌شه.
+        // پرداخت‌هایی که برای تسویه‌ی کاملِ یک بدهیِ دیگه (که الان isPaid=true شده) ثبت شدن، اینجا
+        // حساب نمی‌شن، چون خودِ اون بدهی از myDebts (بالا) کنار گذاشته شده و دوباره‌شماری می‌شه.
+        const manualPayments = await db
+          .select()
+          .from(debtorPayments)
+          .where(and(eq(debtorPayments.debtorId, debtor.id), isNull(debtorPayments.debtId)));
+        paidAmount = manualPayments.reduce((s, p) => s + Number(p.amount), 0);
+
+        // مانده‌ی واقعی رو مستقیم از debtors.total_debt می‌خونیم (منبع معتبر)، نه grossDebt−paidAmount —
+        // این دو باید همیشه برابر باشن، ولی خوندن مستقیم safety-net بهتریه اگه یه‌جا recompute صدا زده نشده باشه
+        remainingDebt = Number(debtor.totalDebt);
       }
 
       // ── امتیاز — فقط اگه واقعاً تو باشگاه مشتریان ثبت شده باشه (دقیقاً همون منطق loyalty.ts) ──
@@ -75,15 +101,17 @@ export async function GET(req: NextRequest) {
           matchingInvoices.filter((i) => i.status === "paid").reduce((s, i) => s + Number(i.totalAmount), 0) +
           matchingShares.filter((sh) => sh.status === "paid").reduce((s, sh) => s + Number(sh.amount), 0);
         if (debtor) {
-          const myPayments = await db.select().from(debtorPayments).where(eq(debtorPayments.debtorId, debtor.id));
-          totalPaid += myPayments.reduce((s, p) => s + Number(p.amount), 0);
+          // برای امتیاز، *همه‌ی* پرداخت‌ها حساب می‌شن (چه وصل‌شده به یه بدهی، چه دستیِ عمومی) — چون
+          // هر دو یعنی پول واقعاً وارد باشگاه شده؛ این با محاسبه‌ی «مانده‌ی بدهی» بالا فرق داره.
+          const allMyPayments = await db.select().from(debtorPayments).where(eq(debtorPayments.debtorId, debtor.id));
+          totalPaid += allMyPayments.reduce((s, p) => s + Number(p.amount), 0);
         }
         const earnedPoints = calcEarnedPoints(totalPaid, pointValue);
         const redeemedPoints = await getRedeemedPoints(customer.id);
         points = Math.max(0, earnedPoints - redeemedPoints);
       }
 
-      if (debtRows.length === 0 && points <= 0) {
+      if (remainingDebt <= 0 && points <= 0) {
         result[phone] = null;
         continue;
       }
@@ -92,6 +120,9 @@ export async function GET(req: NextRequest) {
         customerId: customer?.id ?? null,
         name: customer?.name || debtor?.name || "",
         points,
+        grossDebt,
+        paidAmount,
+        remainingDebt,
         debts: debtRows,
       };
     }

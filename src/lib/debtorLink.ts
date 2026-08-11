@@ -1,18 +1,26 @@
 import { db } from "@/db";
 import { debtors, customers, debts, debtorPayments, invoices, invoiceShares } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { isSamePerson } from "@/lib/personMatch";
 import { ensureCustomerExists } from "@/lib/customerLink";
 import { todayJalaali } from "@/lib/jalaali";
 
-// بدهی واقعیِ فعلیِ یک بدهکار = جمع بدهی‌های بازِ ثبت‌شده منهای جمع پرداخت‌های دستی‌ای که براش ثبت شده.
-// این تابع همیشه از نو محاسبه می‌کنه (نه جمع‌وتفریق تدریجی) تا هیچ‌وقت با ویرایش/حذف بدهی یا پرداخت
-// عدد از واقعیت فاصله نگیره — همه‌ی مسیرهایی که بدهی/پرداخت رو تغییر می‌دن باید این رو صدا بزنن.
+// بدهی واقعیِ فعلیِ یک بدهکار = جمع بدهی‌های بازِ ثبت‌شده منهای جمع پرداخت‌های دستیِ *غیرِ وصل‌شده*
+// (یعنی بدون debt_id). این تابع همیشه از نو محاسبه می‌کنه (نه جمع‌وتفریق تدریجی) تا هیچ‌وقت با
+// ویرایش/حذف بدهی یا پرداخت عدد از واقعیت فاصله نگیره — همه‌ی مسیرهایی که بدهی/پرداخت رو تغییر
+// می‌دن باید این رو صدا بزنن.
+//
+// نکته‌ی مهم درباره‌ی دوباره‌شماری: پرداخت‌هایی که settleDebtRow برای تسویه‌ی *کاملِ* یک بدهیِ مشخص
+// ساخته، به همون بدهی وصلن (debt_id پر شده). چون اون بدهی خودش دیگه isPaid=true شده (پس از
+// unpaidSum کنار گذاشته می‌شه)، اگه اون پرداخت رو *هم* از unpaidSum کم کنیم، همون مبلغ دوبار اثر
+// می‌ذاره — و اگه بعداً بدهیِ جدیدِ دیگه‌ای برای همون بدهکار ثبت بشه، این پرداختِ قدیمی به‌اشتباه
+// روی بدهیِ جدید هم اثر می‌ذاره. برای همین فقط پرداخت‌های بدونِ debt_id (یعنی پرداخت‌های دستیِ
+// جزئی/عمومی که به بدهیِ خاصی وصل نیستن) رو کم می‌کنیم.
 export async function recomputeDebtorTotal(debtorId: number): Promise<number> {
   const unpaidDebts = await db.select().from(debts).where(and(eq(debts.debtorId, debtorId), eq(debts.isPaid, false)));
-  const payments = await db.select().from(debtorPayments).where(eq(debtorPayments.debtorId, debtorId));
+  const manualPayments = await db.select().from(debtorPayments).where(and(eq(debtorPayments.debtorId, debtorId), isNull(debtorPayments.debtId)));
   const unpaidSum = unpaidDebts.reduce((s, d) => s + Number(d.amount), 0);
-  const paidSum = payments.reduce((s, p) => s + Number(p.amount), 0);
+  const paidSum = manualPayments.reduce((s, p) => s + Number(p.amount), 0);
   const total = Math.max(0, unpaidSum - paidSum);
   await db.update(debtors).set({ totalDebt: total.toString() }).where(eq(debtors.id, debtorId));
   return total;
@@ -106,6 +114,7 @@ export async function settleDebtRow(debtId: number, byUsername: string | null): 
     note: debt.invoiceNumber ? `تسویه‌ی بدهیِ فاکتور ${debt.invoiceNumber}` : debt.description || "تسویه‌ی بدهی",
     jalaaliDate: todayJalaali(),
     byUsername,
+    debtId: debt.id,
   });
 
   if (debt.invoiceId) {

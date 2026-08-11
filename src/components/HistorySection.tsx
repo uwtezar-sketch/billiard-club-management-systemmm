@@ -179,9 +179,16 @@ export default function HistorySection() {
   }, [selectedInvoice]);
 
   // ── کارتِ اطلاعاتیِ مشتری (بدهی قبلی + امتیاز) تو پنجره‌ی فاکتور ────────────
-  const [customerSummary, setCustomerSummary] = useState<
-    Record<string, { customerId: number | null; name: string; points: number; debts: { date: string; description: string; amount: number }[] } | null>
-  >({});
+  interface CustomerQuickSummary {
+    customerId: number | null;
+    name: string;
+    points: number;
+    grossDebt: number;
+    paidAmount: number;
+    remainingDebt: number;
+    debts: { date: string; description: string; amount: number }[];
+  }
+  const [customerSummary, setCustomerSummary] = useState<Record<string, CustomerQuickSummary | null>>({});
   const [debtDetailsOpen, setDebtDetailsOpen] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -206,15 +213,14 @@ export default function HistorySection() {
     if (normalized.length < 10) return null;
     const summary = customerSummary[normalized];
     if (!summary) return null;
-    const hasDebt = summary.debts.length > 0;
-    const totalDebt = summary.debts.reduce((s, d) => s + d.amount, 0);
+    const hasDebt = summary.remainingDebt > 0;
     if (!hasDebt && summary.points <= 0) return null;
     const isOpen = !!debtDetailsOpen[normalized];
     return (
       <div className="rounded-lg p-3 space-y-2" style={{ background: "#0e1512", border: "1px solid #2f6b4f" }}>
         <div className="font-bold text-white">ℹ️ {summary.name}</div>
         {hasDebt && (
-          <div className="text-sm" style={{ color: "#f27f8a" }}>💼 بدهی قبلی: {formatPrice(totalDebt)}</div>
+          <div className="text-sm" style={{ color: "#f27f8a" }}>💼 بدهی قبلی: {formatPrice(summary.remainingDebt)}</div>
         )}
         {summary.points > 0 && (
           <div className="text-sm" style={{ color: "#5ee89b" }}>🎁 امتیاز موجود: {summary.points.toLocaleString("fa-IR")} امتیاز</div>
@@ -236,16 +242,28 @@ export default function HistorySection() {
           }}
         >
           <div className="rounded-lg p-2 mt-1 space-y-1" style={{ background: "#141a17" }}>
-            <div className="text-[11px] text-slate-400 mb-1">🧾 جزئیات بدهی:</div>
+            <div className="text-[11px] text-slate-400 mb-1">🧾 جزئیات بدهی (فاکتورهای باز):</div>
             {summary.debts.map((d, i) => (
               <div key={i} className="flex justify-between text-xs">
                 <span className="text-slate-300">{d.date} — {d.description}</span>
                 <span className="text-white">{formatPrice(d.amount)}</span>
               </div>
             ))}
-            <div className="border-t mt-1 pt-1 flex justify-between text-xs font-bold" style={{ borderColor: "#22282490" }}>
-              <span className="text-slate-300">💰 مجموع</span>
-              <span style={{ color: "#f27f8a" }}>{formatPrice(totalDebt)}</span>
+            <div className="border-t mt-1 pt-1 space-y-0.5" style={{ borderColor: "#22282490" }}>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">مجموع فاکتورهای بدهی</span>
+                <span className="text-slate-300">{formatPrice(summary.grossDebt)}</span>
+              </div>
+              {summary.paidAmount > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-400">پرداخت‌های ثبت‌شده</span>
+                  <span style={{ color: "#5ee89b" }}>−{formatPrice(summary.paidAmount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-xs font-bold">
+                <span className="text-slate-300">💰 مانده‌ی واقعی</span>
+                <span style={{ color: "#f27f8a" }}>{formatPrice(summary.remainingDebt)}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -529,9 +547,7 @@ export default function HistorySection() {
   }
 
   // بدهیِ قبلیِ هر گروه (به‌تفکیک شماره‌ی مشتری) — همون endpoint سبکی که برای کارتِ پنجره‌ی فاکتور تکی هم استفاده شد
-  const [groupSummary, setGroupSummary] = useState<
-    Record<string, { customerId: number | null; name: string; points: number; debts: { date: string; description: string; amount: number }[] } | null>
-  >({});
+  const [groupSummary, setGroupSummary] = useState<Record<string, CustomerQuickSummary | null>>({});
 
   useEffect(() => {
     const phones = [...new Set(pendingAll.flatMap((inv) => (inv.isSplit ? inv.shares.map((s) => s.phone) : [inv.customerPhone])))]
@@ -757,13 +773,12 @@ export default function HistorySection() {
                       {(() => {
                         const normalized = normalizePhone(g.phone);
                         const summary = normalized.length >= 10 ? groupSummary[normalized] : null;
-                        const hasDebt = !!summary && summary.debts.length > 0;
+                        const hasDebt = !!summary && summary.remainingDebt > 0;
                         if (!hasDebt) return null;
-                        const totalDebt = summary!.debts.reduce((s, d) => s + d.amount, 0);
                         const isOpen = !!debtDetailsOpen[normalized];
                         return (
                           <div className="rounded-lg p-3 space-y-2" style={{ background: "#0e1512", border: "1px solid #8f1d2c55" }}>
-                            <div className="text-sm" style={{ color: "#f27f8a" }}>💼 بدهی قبلی: {formatPrice(totalDebt)}</div>
+                            <div className="text-sm" style={{ color: "#f27f8a" }}>💼 بدهی قبلی: {formatPrice(summary!.remainingDebt)}</div>
                             <button
                               className="text-xs"
                               style={{ color: "#5ecfe0" }}
@@ -773,16 +788,28 @@ export default function HistorySection() {
                             </button>
                             <div style={{ maxHeight: isOpen ? "400px" : "0px", overflow: "hidden", transition: "max-height 0.25s ease" }}>
                               <div className="rounded-lg p-2 mt-1 space-y-1" style={{ background: "#141a17" }}>
-                                <div className="text-[11px] text-slate-400 mb-1">🧾 جزئیات بدهی:</div>
+                                <div className="text-[11px] text-slate-400 mb-1">🧾 جزئیات بدهی (فاکتورهای باز):</div>
                                 {summary!.debts.map((d, i) => (
                                   <div key={i} className="flex justify-between text-xs">
                                     <span className="text-slate-300">{d.date} — {d.description}</span>
                                     <span className="text-white">{formatPrice(d.amount)}</span>
                                   </div>
                                 ))}
-                                <div className="border-t mt-1 pt-1 flex justify-between text-xs font-bold" style={{ borderColor: "#22282490" }}>
-                                  <span className="text-slate-300">💰 مجموع</span>
-                                  <span style={{ color: "#f27f8a" }}>{formatPrice(totalDebt)}</span>
+                                <div className="border-t mt-1 pt-1 space-y-0.5" style={{ borderColor: "#22282490" }}>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-slate-400">مجموع فاکتورهای بدهی</span>
+                                    <span className="text-slate-300">{formatPrice(summary!.grossDebt)}</span>
+                                  </div>
+                                  {summary!.paidAmount > 0 && (
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-slate-400">پرداخت‌های ثبت‌شده</span>
+                                      <span style={{ color: "#5ee89b" }}>−{formatPrice(summary!.paidAmount)}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex justify-between text-xs font-bold">
+                                    <span className="text-slate-300">💰 مانده‌ی واقعی</span>
+                                    <span style={{ color: "#f27f8a" }}>{formatPrice(summary!.remainingDebt)}</span>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -926,7 +953,7 @@ export default function HistorySection() {
                     placeholder="بدون نام"
                     onChange={(name, phone) => {
                       setEditCustomerName(name);
-                      if (phone && !editCustomerPhone) setEditCustomerPhone(phone);
+                      setEditCustomerPhone(phone);
                     }}
                   />
                 </div>
@@ -972,7 +999,7 @@ export default function HistorySection() {
                             onChange={(name, phone) => {
                               setShareNameEdits((p) => ({
                                 ...p,
-                                [sh.id]: { label: name, phone: phone && !nameEdit.phone ? phone : nameEdit.phone },
+                                [sh.id]: { label: name, phone },
                               }));
                             }}
                           />
@@ -1174,7 +1201,7 @@ export default function HistorySection() {
                         placeholder="نام بدهکار جدید"
                         onChange={(name, phone) => {
                           setEditNewDebtorName(name);
-                          if (phone && !editNewDebtorPhone) setEditNewDebtorPhone(phone);
+                          setEditNewDebtorPhone(phone);
                         }}
                       />
                       <input

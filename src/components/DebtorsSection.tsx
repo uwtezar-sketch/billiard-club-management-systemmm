@@ -736,7 +736,7 @@ export default function DebtorsSection() {
             <CustomerNameAutocomplete
               value={debtorForm.name}
               directory={customerDirectory}
-              onChange={(name, phone) => setDebtorForm((p) => ({ ...p, name, phone: phone && !p.phone ? phone : p.phone }))}
+              onChange={(name, phone) => setDebtorForm((p) => ({ ...p, name, phone }))}
             />
           </div>
           <div>
@@ -817,9 +817,12 @@ export default function DebtorsSection() {
               value={mergeCustomerName}
               directory={customerDirectory}
               placeholder="جستجوی نام..."
-              onChange={(name) => {
+              onChange={(name, phone) => {
                 setMergeCustomerName(name);
-                const match = customerDirectory.find((c) => c.name === name);
+                // اول با شماره (دقیق‌تر، چون اسمِ تکراری هم ممکنه باشه)، وگرنه با اسم
+                const match = phone
+                  ? customerDirectory.find((c) => c.phone === phone)
+                  : customerDirectory.find((c) => c.name === name);
                 setMergeCustomerId(match ? match.id : null);
               }}
             />

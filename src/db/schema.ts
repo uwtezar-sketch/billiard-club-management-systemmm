@@ -158,6 +158,13 @@ export const debtorPayments = pgTable("debtor_payments", {
   note: text("note"),
   jalaaliDate: text("jalaali_date"),
   byUsername: text("by_username"),
+  // اگه این پرداخت دقیقاً بابتِ تسویه‌ی کاملِ یک ردیفِ بدهیِ مشخص بوده (از طریق settleDebtRow)، اینجا
+  // به همون debt وصل می‌شه. این تمایز خیلی مهمه: چون اون بدهی دیگه isPaid=true شده و از «بدهیِ باز»
+  // کنار گذاشته می‌شه، این پرداخت نباید *دوباره* از بدهی‌های بازِ دیگه کم بشه — وگرنه یه پرداختِ قدیمی
+  // برای یه بدهیِ قبلاً‌تسویه‌شده، باعث می‌شه بدهیِ جدیدِ دیگه‌ای که ربطی بهش نداره هم اشتباهاً کم نشون داده بشه.
+  // پرداخت‌های دستیِ عادی (partial payment از بخش بدهکاران) این ستون رو خالی می‌ذارن — چون به بدهیِ
+  // خاصی وصل نیستن، بلکه یه اعتبارِ کلی روی حساب بدهکارن.
+  debtId: integer("debt_id").references(() => debts.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

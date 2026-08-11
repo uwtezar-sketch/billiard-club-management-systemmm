@@ -284,7 +284,7 @@ export default function CafeSection() {
                     placeholder="اختیاری"
                     onChange={(name, phone) => {
                       setCustomerName(name);
-                      if (phone && !customerPhone) setCustomerPhone(phone);
+                      setCustomerPhone(phone);
                     }}
                   />
                 </div>
@@ -339,7 +339,7 @@ export default function CafeSection() {
                         placeholder="نام بدهکار جدید"
                         onChange={(name, phone) => {
                           setNewDebtorName(name);
-                          if (phone && !newDebtorPhone) setNewDebtorPhone(phone);
+                          setNewDebtorPhone(phone);
                         }}
                       />
                       <input className="form-input" placeholder="شماره تلفن (اختیاری)" dir="ltr" value={newDebtorPhone} onChange={(e) => setNewDebtorPhone(e.target.value)} />

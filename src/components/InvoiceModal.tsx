@@ -462,7 +462,7 @@ export default function InvoiceModal({
               placeholder="اختیاری"
               onChange={(name, phone) => {
                 setCustomerName(name);
-                if (phone && !customerPhone) setCustomerPhone(phone);
+                setCustomerPhone(phone);
               }}
             />
           </div>
@@ -633,7 +633,7 @@ export default function InvoiceModal({
                       value={s.label}
                       directory={customerDirectory}
                       placeholder="مثلاً علی"
-                      onChange={(name, phone) => updateShare(s.key, { label: name, phone: phone && !s.phone ? phone : s.phone })}
+                      onChange={(name, phone) => updateShare(s.key, { label: name, phone })}
                     />
                   </div>
                   {shares.length > 2 && (
@@ -812,7 +812,7 @@ export default function InvoiceModal({
                         placeholder="نام مشتری..."
                         onChange={(name, phone) => {
                           setNewDebtorName(name);
-                          if (phone && !newDebtorPhone) setNewDebtorPhone(phone);
+                          setNewDebtorPhone(phone);
                         }}
                       />
                       <input

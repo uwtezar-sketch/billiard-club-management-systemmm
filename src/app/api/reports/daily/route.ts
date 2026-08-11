@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { invoices, debts, invoiceShares, debtorPayments } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, isNull, and } from "drizzle-orm";
 import { todayJalaali } from "@/lib/jalaali";
 import * as jalaali from "jalaali-js";
 import { invoiceRatios, paidByMethod, type ShareLite } from "@/lib/invoiceRevenue";
@@ -51,8 +51,13 @@ async function computeRevenueForDate(date: string) {
     .filter((d) => d.paidAt && tehranJalaliOf(new Date(d.paidAt)) === date)
     .reduce((sum, d) => sum + Number(d.amount), 0);
 
-  // پرداخت‌های دستیِ جزئی (از بخش بدهکاران) هم پول واقعیه که همون روز وصول شده — باید حساب بشه
-  const dayPayments = await db.select().from(debtorPayments).where(eq(debtorPayments.jalaaliDate, date));
+  // پرداخت‌های دستیِ *غیرِ وصل‌شده* (از بخش بدهکاران) هم پول واقعیه که همون روز وصول شده — باید حساب بشه.
+  // فقط اونایی که debt_id ندارن (یعنی پرداختِ کاملِ یه بدهیِ مشخص از طریق settleDebtRow نبودن) —
+  // وگرنه همون مبلغ یه‌بار از طریق debtCollectedFromSettled بالا حساب شده و اگه اینجا هم بیاد، دوبار می‌شه.
+  const dayPayments = await db
+    .select()
+    .from(debtorPayments)
+    .where(and(eq(debtorPayments.jalaaliDate, date), isNull(debtorPayments.debtId)));
   const debtCollectedFromManualPayments = dayPayments.reduce((sum, p) => sum + Number(p.amount), 0);
 
   const debtCollected = debtCollectedFromSettled + debtCollectedFromManualPayments;

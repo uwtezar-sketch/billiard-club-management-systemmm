@@ -9,7 +9,11 @@ interface DirectoryItem {
 
 interface Props {
   value: string;
-  onChange: (name: string, matchedPhone?: string) => void;
+  // matchedPhone همیشه یک رشته‌ست، هیچ‌وقت undefined: وقتی کاربر از لیست انتخاب می‌کنه، شماره‌ی
+  // همون مشتریه؛ وقتی آزادانه تایپ می‌کنه (یعنی دیگه انتخاب قبلی معتبر نیست)، رشته‌ی خالیه.
+  // این عمداً اینجا متمرکز شده تا هیچ‌جای دیگه‌ی کد لازم نباشه خودش تشخیص بده «باید شماره رو پاک کنم یا نه»
+  // — دقیقاً همون چیزی که قبلاً چندجا فراموش می‌شد و باعث می‌شد شماره‌ی یه مشتری قبلی به نامِ یکیِ دیگه بچسبه.
+  onChange: (name: string, matchedPhone: string) => void;
   directory: DirectoryItem[];
   placeholder?: string;
   className?: string;
@@ -52,7 +56,7 @@ export default function CustomerNameAutocomplete({ value, onChange, directory, p
         value={value}
         placeholder={placeholder}
         onChange={(e) => {
-          onChange(e.target.value);
+          onChange(e.target.value, ""); // آزادانه تایپ‌کردنه، نه انتخاب — شماره‌ی قبلی دیگه معتبر نیست
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
@@ -71,7 +75,7 @@ export default function CustomerNameAutocomplete({ value, onChange, directory, p
               style={{ borderBottom: "1px solid #26332a" }}
               onMouseDown={(e) => {
                 e.preventDefault(); // تا قبل از onBlur اجرا بشه
-                onChange(m.name, m.phone);
+                onChange(m.name, m.phone || "");
                 setOpen(false);
               }}
             >

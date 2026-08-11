@@ -247,7 +247,7 @@ export default function ReservationsSection() {
           <CustomerNameAutocomplete
             value={form.customerName}
             directory={customerDirectory}
-            onChange={(name, phone) => setForm((p) => ({ ...p, customerName: name, customerPhone: phone && !p.customerPhone ? phone : p.customerPhone }))}
+            onChange={(name, phone) => setForm((p) => ({ ...p, customerName: name, customerPhone: phone }))}
           />
         </div>
         <div>
