@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ToastProvider } from "@/components/Toast";
 import Modal from "@/components/Modal";
 import TablesSection from "@/components/TablesSection";
@@ -46,35 +46,35 @@ export default function Home() {
   const [activeTablesCount, setActiveTablesCount] = useState(0);
   const [unpaidDebtorsCount, setUnpaidDebtorsCount] = useState(0);
   const [pendingInvoicesCount, setPendingInvoicesCount] = useState(0);
-  
-  useEffect(() => {
-    async function fetchCounts() {
-      try {
-        const [tablesRes, debtorsRes, pendingRes] = await Promise.all([
-          fetch("/api/tables"),
-          fetch("/api/debtors"),
-          fetch("/api/invoices?status=pending"),
-        ]);
-        const tablesData = await tablesRes.json();
-        if (Array.isArray(tablesData)) {
-          setActiveTablesCount(tablesData.filter((t: { isActive: boolean }) => t.isActive).length);
-        }
-        const debtorsData = await debtorsRes.json();
-        if (Array.isArray(debtorsData)) {
-          setUnpaidDebtorsCount(debtorsData.filter((d: { totalDebt: string }) => Number(d.totalDebt) > 0).length);
-        }
-        const pendingData = await pendingRes.json();
-        if (Array.isArray(pendingData)) {
-          setPendingInvoicesCount(pendingData.length);
-        }
-      } catch {
-        // بی‌سروصدا نادیده گرفته میشه، این فقط یه نشونه‌ی کوچیکه
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const fetchCounts = useCallback(async () => {
+    try {
+      const [tablesRes, debtorsRes, pendingRes] = await Promise.all([
+        fetch("/api/tables"),
+        fetch("/api/debtors"),
+        fetch("/api/invoices?status=pending"),
+      ]);
+      const tablesData = await tablesRes.json();
+      if (Array.isArray(tablesData)) {
+        setActiveTablesCount(tablesData.filter((t: { isActive: boolean }) => t.isActive).length);
       }
+      const debtorsData = await debtorsRes.json();
+      if (Array.isArray(debtorsData)) {
+        setUnpaidDebtorsCount(debtorsData.filter((d: { totalDebt: string }) => Number(d.totalDebt) > 0).length);
+      }
+      const pendingData = await pendingRes.json();
+      if (Array.isArray(pendingData)) {
+        setPendingInvoicesCount(pendingData.length);
+      }
+    } catch {
+      // بی‌سروصدا نادیده گرفته میشه، این فقط یه نشونه‌ی کوچیکه
     }
-    fetchCounts();
-    const interval = setInterval(fetchCounts, 20000);
-    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    fetchCounts();
+  }, [fetchCounts]);
 
 useEffect(() => {
     const originalFetch = window.fetch;
@@ -90,16 +90,25 @@ useEffect(() => {
       return response;
     };
   }, []);
-  useEffect(() => {
-    const update = () => {
-      const now = new Date();
-      setCurrentTime(now.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" }));
-      setCurrentDate(todayJalaali());
-    };
-    update();
-    const interval = setInterval(update, 30000);
-    return () => clearInterval(interval);
+  const updateClock = useCallback(() => {
+    const now = new Date();
+    setCurrentTime(now.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" }));
+    setCurrentDate(todayJalaali());
   }, []);
+
+  useEffect(() => {
+    updateClock();
+  }, [updateClock]);
+
+  const handleManualRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      updateClock();
+      await fetchCounts();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [updateClock, fetchCounts]);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -152,6 +161,14 @@ useEffect(() => {
                 <p className="text-xs text-slate-400">سامانه مدیریت هوشمند</p>
               </div>
               <div className="flex items-center gap-3">
+                <button
+                  onClick={handleManualRefresh}
+                  disabled={isRefreshing}
+                  className="flex items-center justify-center w-8 h-8 rounded-lg text-sm text-slate-300 bg-slate-800/60 border border-slate-700 disabled:opacity-60"
+                  aria-label="بروزرسانی"
+                >
+                  <span className={isRefreshing ? "animate-spin" : ""}>🔄</span>
+                </button>
                 <div className="text-left">
                   <div className="text-lg font-bold" style={{ color: "#e0b23a" }}>{currentTime}</div>
                   <div className="text-xs text-slate-500">{currentDate}</div>
@@ -254,7 +271,7 @@ useEffect(() => {
           {activeTab === "history" && <HistorySection />}
           {activeTab === "report" && <DailyReportSection />}
           {activeTab === "dashboard" && <DashboardSection />}
-          {activeTab === "customers" && <CustomersSection role={role} />}
+          {activeTab === "customers" && <CustomersSection />}
           {activeTab === "inventory" && <InventorySection />}
           {activeTab === "users" && <UsersSection />}
           {activeTab === "settings" && <SettingsSection />}

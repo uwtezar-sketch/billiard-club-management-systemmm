@@ -29,6 +29,7 @@ interface Invoice {
 export default function PendingInvoicesWidget() {
   const { showToast } = useToast();
   const [pending, setPending] = useState<Invoice[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetch_ = useCallback(async () => {
     const res = await fetch("/api/invoices?status=pending");
@@ -36,10 +37,17 @@ export default function PendingInvoicesWidget() {
     setPending(Array.isArray(data) ? data : []);
   }, []);
 
+  const handleManualRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await fetch_();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [fetch_]);
+
   useEffect(() => {
     fetch_();
-    const interval = setInterval(fetch_, 15000);
-    return () => clearInterval(interval);
   }, [fetch_]);
 
   async function settle(id: number) {
@@ -66,8 +74,15 @@ export default function PendingInvoicesWidget() {
 
   return (
     <div className="card border-yellow-700 mb-4">
-      <h3 className="font-bold text-yellow-400 mb-3 flex items-center gap-2">
-        ⏳ <span>فاکتورهای در انتظار تسویه ({pending.length})</span>
+      <h3 className="font-bold text-yellow-400 mb-3 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-2">⏳ <span>فاکتورهای در انتظار تسویه ({pending.length})</span></span>
+        <button
+          onClick={handleManualRefresh}
+          disabled={isRefreshing}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-slate-300 bg-slate-800 border border-slate-700 disabled:opacity-60"
+        >
+          <span className={isRefreshing ? "animate-spin" : ""}>🔄</span>
+        </button>
       </h3>
       <div className="space-y-2">
         {pending.map((inv) => {

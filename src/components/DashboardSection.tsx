@@ -54,16 +54,6 @@ interface PeakCell {
   count: number;
 }
 
-interface TableProfitStat {
-  tableId: number | null;
-  tableName: string;
-  tableType: string | null;
-  revenue: number;
-  sessionCount: number;
-  avgRevenuePerSession: number;
-  avgDurationMinutes: number;
-}
-
 interface Analytics {
   daily: DailyPoint[];
   totalRevenue: number;
@@ -83,7 +73,6 @@ interface Analytics {
   dayLabels: string[];
   blockLabels: string[];
   peakCells: Record<string, PeakCell>;
-  tableStats: TableProfitStat[];
 }
 
 const TYPE_TABS: { id: string; label: string }[] = [
@@ -92,13 +81,6 @@ const TYPE_TABS: { id: string; label: string }[] = [
   { id: "eightball", label: "🎳 ایت‌بال" },
   { id: "playstation", label: "🎮 پلی‌استیشن" },
 ];
-
-// باشگاه از ساعت ۱۵ (۳ عصر) تا ۳ صبح بازه — این بلوک‌ها (به ترتیب بازشدن تا بسته‌شدن) رو از
-// heatmap کلی جدا می‌کنیم تا فقط ساعاتِ کاریِ واقعی رو تحلیل کنیم، نه کل شبانه‌روز.
-// ایندکس‌ها متناظرِ blockLabels سمت سرور هستن: ["۰-۲","۲-۴","۴-۶","۶-۸","۸-۱۰","۱۰-۱۲","۱۲-۱۴","۱۴-۱۶","۱۶-۱۸","۱۸-۲۰","۲۰-۲۲","۲۲-۲۴"]
-const OPERATING_BLOCK_ORDER = [7, 8, 9, 10, 11, 0, 1];
-// این دو بلوکِ اول (۱۴ تا ۲۰) بازه‌ی «کم‌رونق»ه که می‌خوایم روش تمرکز کنیم
-const OFF_PEAK_FOCUS_COUNT = 2;
 
 function jalaaliDay(date: string) {
   const parts = date.split("/");
@@ -117,6 +99,7 @@ export default function DashboardSection() {
   const [showLeastCafe, setShowLeastCafe] = useState(false);
   const [selectedDay, setSelectedDay] = useState<DailyPoint | null>(null);
   const [selectedCell, setSelectedCell] = useState<{ day: number; block: number; count: number } | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -138,10 +121,17 @@ export default function DashboardSection() {
     }
   }, [showToast, range]);
 
+  const handleManualRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await fetchAll();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [fetchAll]);
+
   useEffect(() => {
     fetchAll();
-    const interval = setInterval(fetchAll, 15000);
-    return () => clearInterval(interval);
   }, [fetchAll]);
 
   useEffect(() => {
@@ -164,21 +154,20 @@ export default function DashboardSection() {
   const cafeSharePercent =
     analytics && analytics.totalRevenue > 0 ? Math.round((analytics.totalCafeRevenue / analytics.totalRevenue) * 100) : 0;
 
-  // ── تحلیل ساعات کم‌رونق (فقط داخل بازه‌ی کاری واقعی باشگاه: ۱۵ تا ۳) ─────
-  const offPeakBlocks = (() => {
-    if (!analytics || currentHeatmap.length === 0) return [];
-    const totals = OPERATING_BLOCK_ORDER.map((idx) => {
-      const total = currentHeatmap.reduce((s, dayRow) => s + (dayRow[idx] || 0), 0);
-      return { idx, label: analytics.blockLabels[idx], total };
-    });
-    const maxTotal = Math.max(1, ...totals.map((t) => t.total));
-    return totals.map((t) => ({ ...t, pct: Math.round((t.total / maxTotal) * 100) }));
-  })();
-  const quietestBlocks = [...offPeakBlocks].sort((a, b) => a.total - b.total).slice(0, OFF_PEAK_FOCUS_COUNT);
-  const quietestIdxSet = new Set(quietestBlocks.map((b) => b.idx));
-
   return (
     <div className="space-y-4">
+      {/* Manual Refresh */}
+      <div className="flex items-center justify-end">
+        <button
+          onClick={handleManualRefresh}
+          disabled={isRefreshing}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 bg-slate-800 border border-slate-700 disabled:opacity-60"
+        >
+          <span className={isRefreshing ? "animate-spin" : ""}>🔄</span>
+          {isRefreshing ? "در حال بروزرسانی..." : "بروزرسانی"}
+        </button>
+      </div>
+
       {/* Quick Stats */}
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl p-4" style={{ background: "linear-gradient(135deg, #15803d, #16a34a)", border: "1px solid #22c55e" }}>
@@ -439,70 +428,6 @@ export default function DashboardSection() {
           ) : (
             <div className="text-center text-slate-500 text-sm py-4">داده‌ای برای این دسته وجود ندارد</div>
           )}
-        </div>
-      )}
-
-      {/* Off-peak hours (ساعات کم‌رونق در بازه‌ی کاری واقعی باشگاه) */}
-      {analytics && offPeakBlocks.length > 0 && offPeakBlocks.some((b) => b.total > 0) && (
-        <div className="card" style={{ borderColor: "#2f6b4f" }}>
-          <h3 className="font-bold mb-1" style={{ color: "#5ee89b" }}>🌙 ترافیک طی ساعات کاری (۱۵ تا ۳)</h3>
-          <div className="text-xs text-slate-500 mb-3">جمع تعداد فاکتور در هر بازه، طی بازه‌ی انتخاب‌شده — {TYPE_TABS.find((t) => t.id === heatType)?.label}</div>
-          <div className="space-y-1.5">
-            {offPeakBlocks.map((b) => {
-              const isQuiet = quietestIdxSet.has(b.idx) && b.total > 0;
-              return (
-                <div key={b.idx} className="flex items-center gap-2">
-                  <span className="text-[10px] text-slate-400 w-10 shrink-0">{b.label}</span>
-                  <div className="flex-1 rounded-full overflow-hidden" style={{ background: "#0e1512", height: "16px" }}>
-                    <div
-                      className="h-full rounded-full flex items-center justify-end px-1.5"
-                      style={{
-                        width: `${Math.max(b.pct, b.total > 0 ? 8 : 0)}%`,
-                        background: isQuiet ? "#e0b23a" : "#2563eb",
-                      }}
-                    >
-                      {b.total > 0 && <span className="text-[9px] font-bold text-white">{b.total.toLocaleString("fa-IR")}</span>}
-                    </div>
-                  </div>
-                  {isQuiet && <span className="text-[10px] shrink-0" style={{ color: "#e0b23a" }}>😴 کم‌رونق</span>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Table Profitability (سودآوری هر میز/دستگاه) */}
-      {analytics && analytics.tableStats.length > 0 && (
-        <div className="card">
-          <h3 className="font-bold mb-1 text-slate-300">🎯 سودآوری هر میز/دستگاه</h3>
-          <div className="text-xs text-slate-500 mb-3">درآمد واقعاً پرداخت‌شده، طی بازه‌ی انتخاب‌شده</div>
-          <div className="space-y-2">
-            {analytics.tableStats.map((t) => {
-              const maxRevenue = Math.max(...analytics.tableStats.map((x) => x.revenue), 1);
-              const pct = Math.max(6, Math.round((t.revenue / maxRevenue) * 100));
-              return (
-                <div key={`${t.tableId}-${t.tableName}`}>
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="text-white font-medium">
-                      {t.tableType === "snooker" ? "🎱" : t.tableType === "eightball" ? "🎳" : "🎮"} {t.tableName}
-                    </span>
-                    <span className="text-slate-400">
-                      {t.sessionCount.toLocaleString("fa-IR")} جلسه — میانگین {formatDuration(t.avgDurationMinutes)}
-                    </span>
-                  </div>
-                  <div className="rounded-full overflow-hidden" style={{ background: "#0e1512", height: "18px" }}>
-                    <div
-                      className="h-full rounded-full flex items-center px-2"
-                      style={{ width: `${pct}%`, background: "#2563eb" }}
-                    >
-                      <span className="text-[10px] font-bold text-white">{formatPrice(t.revenue)}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
 

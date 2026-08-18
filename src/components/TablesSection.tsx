@@ -4,28 +4,8 @@ import Modal from "./Modal";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./Toast";
 import { formatDuration, calcPrice, formatPrice, toJalaali } from "@/lib/jalaali";
-import { normalizePhone } from "@/lib/phone";
 import InvoiceModal from "./InvoiceModal";
 import CustomerNameAutocomplete from "./CustomerNameAutocomplete";
-
-interface CustomerDirEntry {
-  id: number;
-  name: string;
-  phone: string;
-  isVip: boolean;
-  tier: "good" | "watch" | "bad" | "new";
-  outstandingDebt: number;
-  oldestUnpaidDebtDays: number | null;
-  visitCount: number;
-  loyaltyPoints: number;
-}
-
-const TIER_META: Record<CustomerDirEntry["tier"], { label: string; color: string }> = {
-  good: { label: "🟢 خوش‌حساب", color: "#5ee89b" },
-  watch: { label: "🟡 بدهیِ تازه", color: "#e0b23a" },
-  bad: { label: "🔴 بدحساب مزمن", color: "#f27f8a" },
-  new: { label: "", color: "" },
-};
 
 interface Table {
   id: number;
@@ -66,10 +46,6 @@ interface Settings {
   snooker_price?: string;
   eightball_price?: string;
   playstation_price?: string;
-  offpeak_enabled?: string;
-  offpeak_start_hour?: string;
-  offpeak_end_hour?: string;
-  offpeak_discount_percent?: string;
 }
 
 interface Reservation {
@@ -160,28 +136,12 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
   const [menuItems, setMenuItems] = useState<CafeMenuItem[]>([]);
   const [settings, setSettings] = useState<Settings>({});
   const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [customerDirectory, setCustomerDirectory] = useState<CustomerDirEntry[]>([]);
+  const [customerDirectory, setCustomerDirectory] = useState<{ name: string; phone: string }[]>([]);
 
   useEffect(() => {
     fetch("/api/customers")
       .then((r) => r.json())
-      .then((d) =>
-        setCustomerDirectory(
-          Array.isArray(d)
-            ? d.map((c) => ({
-                id: c.id,
-                name: c.name,
-                phone: c.phone,
-                isVip: !!c.isVip,
-                tier: c.tier || "new",
-                outstandingDebt: Number(c.outstandingDebt || 0),
-                oldestUnpaidDebtDays: c.oldestUnpaidDebtDays ?? null,
-                visitCount: Number(c.visitCount || 0),
-                loyaltyPoints: Number(c.loyaltyPoints || 0),
-              }))
-            : []
-        )
-      )
+      .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { name: string; phone: string }) => ({ name: c.name, phone: c.phone })) : []))
       .catch(() => {});
   }, []);
 
@@ -208,13 +168,11 @@ const [loading, setLoading] = useState(true);
   });
   const [startLoading, setStartLoading] = useState(false);
   const [fillingReservationId, setFillingReservationId] = useState<number | null>(null);
-  const [addNewToClub, setAddNewToClub] = useState(false);
 
   // Session edit
   const [editStartTime, setEditStartTime] = useState("");
   const [editPrice, setEditPrice] = useState("");
   const [editCustomer, setEditCustomer] = useState("");
-  const [editCustomerPhone, setEditCustomerPhone] = useState("");
   const [editNotes, setEditNotes] = useState("");
 
   const fetchData = useCallback(async () => {
@@ -241,27 +199,14 @@ const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 10000);
+    const interval = setInterval(fetchData, 60000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  function isOffPeakNow(): boolean {
-    if (settings.offpeak_enabled !== "true") return false;
-    const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Tehran", hour: "2-digit", hour12: false }).format(new Date())) % 24;
-    const start = Number(settings.offpeak_start_hour ?? 15);
-    const end = Number(settings.offpeak_end_hour ?? 20);
-    if (start <= end) return hour >= start && hour < end;
-    return hour >= start || hour < end; // برای بازه‌ای که از نیمه‌شب رد بشه
-  }
-
   function getDefaultPrice(type: string) {
-    const base =
-      type === "snooker" ? Number(settings.snooker_price || 150000) : type === "eightball" ? Number(settings.eightball_price || 100000) : Number(settings.playstation_price || 80000);
-    if (isOffPeakNow()) {
-      const pct = Number(settings.offpeak_discount_percent || 0);
-      return Math.round((base * (1 - pct / 100)) / 1000) * 1000;
-    }
-    return base;
+    if (type === "snooker") return Number(settings.snooker_price || 150000);
+    if (type === "eightball") return Number(settings.eightball_price || 100000);
+    return Number(settings.playstation_price || 80000);
   }
 
   function openStartModal(table: Table) {
@@ -276,7 +221,6 @@ const [loading, setLoading] = useState(true);
       price: String(getDefaultPrice(table.type)),
     });
     setFillingReservationId(todayRes?.id || null);
-    setAddNewToClub(false);
     setStartModal({ open: true, table });
   }
 
@@ -318,24 +262,9 @@ const [loading, setLoading] = useState(true);
           body: JSON.stringify({ status: "done", sessionId: newSession.id }),
         });
       }
-      if (addNewToClub && startForm.customerName.trim() && startForm.customerPhone.trim()) {
-        try {
-          const cRes = await fetch("/api/customers", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: startForm.customerName.trim(), phone: startForm.customerPhone.trim() }),
-          });
-          if (cRes.ok) {
-            showToast("مشتری جدید به باشگاه اضافه شد", "success");
-          }
-        } catch {
-          // بی‌سروصدا نادیده گرفته می‌شه — شروع میز مهم‌تره، بعداً هم می‌شه دستی اضافه‌ش کرد
-        }
-      }
       showToast(`${getTypeLabel(table.type)} ${table.name} شروع شد`, "success");
       setStartModal({ open: false, table: null });
       setFillingReservationId(null);
-      setAddNewToClub(false);
       fetchData();
       onRefreshNeeded?.();
     } finally {
@@ -356,7 +285,6 @@ const [loading, setLoading] = useState(true);
     setEditStartTime("");
     setEditPrice(table.activeSession.pricePerHour);
     setEditCustomer(table.activeSession.customerName || "");
-    setEditCustomerPhone(table.activeSession.customerPhone || "");
     setEditNotes(table.activeSession.notes || "");
   }
 
@@ -365,7 +293,6 @@ const [loading, setLoading] = useState(true);
     const sid = sessionModal.session.id;
     const body: Record<string, unknown> = {};
     if (editCustomer !== (sessionModal.session.customerName || "")) body.customerName = editCustomer;
-    if (editCustomerPhone !== (sessionModal.session.customerPhone || "")) body.customerPhone = editCustomerPhone;
     if (editNotes !== (sessionModal.session.notes || "")) body.notes = editNotes;
     if (editPrice && Number(editPrice) !== Number(sessionModal.session.pricePerHour)) {
       body.pricePerHour = Number(editPrice);
@@ -467,19 +394,6 @@ const [loading, setLoading] = useState(true);
   }
 
   const secondsAgoLabel = useSecondsAgo(lastSync);
-
-  // شماره‌ای که تو فرم «شروع میز» تایپ می‌شه رو با باشگاه مشتریان مچ می‌کنیم — همون ایده‌ی «کد اشتراک»
-  const normalizedStartPhone = normalizePhone(startForm.customerPhone);
-  const matchedStartCustomer =
-    normalizedStartPhone.length >= 10 ? customerDirectory.find((c) => normalizePhone(c.phone) === normalizedStartPhone) || null : null;
-  const isNewPhoneCandidate = normalizedStartPhone.length >= 10 && !matchedStartCustomer && !!startForm.customerName.trim();
-
-  useEffect(() => {
-    if (matchedStartCustomer && !startForm.customerName.trim()) {
-      setStartForm((p) => ({ ...p, customerName: matchedStartCustomer.name }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matchedStartCustomer?.id]);
 
   if (loading) {
     return (
@@ -599,45 +513,17 @@ const [loading, setLoading] = useState(true);
               📅 اطلاعات از رزرو امروز پر شد
             </div>
           )}
-          {startModal.table && isOffPeakNow() && (
-            <div className="rounded-lg px-3 py-2 text-xs" style={{ background: "#12302433", border: "1px solid #2f6b4f", color: "#5ee89b" }}>
-              🌙 الان تو بازه‌ی کم‌رونقه — قیمت {settings.offpeak_discount_percent}٪ تخفیف خورد (قابل ویرایش)
-            </div>
-          )}
-
           <div>
-            <label className="block text-sm text-slate-400 mb-1">نام مشتری</label>
+            <label className="block text-sm text-slate-400 mb-1">نام مشتری (اختیاری)</label>
             <CustomerNameAutocomplete
               value={startForm.customerName}
               directory={customerDirectory}
-              placeholder="اسم یا شماره تلفن رو تایپ کن..."
+              placeholder="نام مشتری..."
               onChange={(name, phone) =>
-                setStartForm((p) => ({ ...p, customerName: name, customerPhone: phone }))
+                setStartForm((p) => ({ ...p, customerName: name, customerPhone: phone && !p.customerPhone ? phone : p.customerPhone }))
               }
             />
           </div>
-
-          {matchedStartCustomer && (
-            <div className="rounded-lg p-3 text-xs" style={{ background: "#0e1512", border: "1px solid #2f6b4f" }}>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-white font-bold">✅ {matchedStartCustomer.name}</span>
-                {matchedStartCustomer.isVip && <span className="badge" style={{ background: "#3a2a0c", color: "#e0b23a" }}>⭐ VIP</span>}
-                {TIER_META[matchedStartCustomer.tier].label && (
-                  <span style={{ color: TIER_META[matchedStartCustomer.tier].color }}>{TIER_META[matchedStartCustomer.tier].label}</span>
-                )}
-                {matchedStartCustomer.loyaltyPoints > 0 && (
-                  <span className="badge" style={{ background: "#0d3b2622", color: "#5ee89b" }}>🎁 {matchedStartCustomer.loyaltyPoints.toLocaleString("fa-IR")} امتیاز</span>
-                )}
-              </div>
-              <div className="text-slate-500 mt-1">{matchedStartCustomer.visitCount.toLocaleString("fa-IR")} بار مراجعه</div>
-              {matchedStartCustomer.tier === "bad" && (
-                <div className="mt-1.5 font-bold" style={{ color: "#f27f8a" }}>
-                  ⚠️ بدهیِ باز {formatPrice(matchedStartCustomer.outstandingDebt)} — {matchedStartCustomer.oldestUnpaidDebtDays?.toLocaleString("fa-IR")} روزه تسویه نشده
-                </div>
-              )}
-            </div>
-          )}
-
           <div>
             <label className="block text-sm text-slate-400 mb-1">شماره تلفن (اختیاری)</label>
             <input
@@ -649,17 +535,6 @@ const [loading, setLoading] = useState(true);
               dir="ltr"
             />
           </div>
-
-          {isNewPhoneCandidate && (
-            <label
-              className="flex items-center gap-2 rounded-lg p-3 text-xs cursor-pointer"
-              style={{ background: "#0e1512", border: "1px solid #c9971f" }}
-            >
-              <input type="checkbox" checked={addNewToClub} onChange={(e) => setAddNewToClub(e.target.checked)} />
-              <span style={{ color: "#e0b23a" }}>🆕 مشتری جدیده — به باشگاه مشتریان اضافه‌ش کن</span>
-            </label>
-          )}
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-400 mb-1">ساعت شروع</label>
@@ -759,21 +634,7 @@ const [loading, setLoading] = useState(true);
                 <CustomerNameAutocomplete
                   value={editCustomer}
                   directory={customerDirectory}
-                  onChange={(name, phone) => {
-                    setEditCustomer(name);
-                    setEditCustomerPhone(phone);
-                  }}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">شماره تلفن</label>
-                <input
-                  className="form-input"
-                  type="tel"
-                  dir="ltr"
-                  value={editCustomerPhone}
-                  onChange={(e) => setEditCustomerPhone(e.target.value)}
-                  placeholder="09..."
+                  onChange={(name) => setEditCustomer(name)}
                 />
               </div>
               <div>
