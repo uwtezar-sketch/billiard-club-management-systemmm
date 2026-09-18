@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { debtors, customers, debts, debtorPayments, invoices, invoiceShares } from "@/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
-import { isSamePerson } from "@/lib/personMatch";
+import { isSamePerson, normalizeName } from "@/lib/personMatch";
 import { ensureCustomerExists } from "@/lib/customerLink";
 import { todayJalaali } from "@/lib/jalaali";
 
@@ -43,8 +43,13 @@ type DebtInput = {
 //     - اگه اون مشتری قبلاً یک بدهکارِ لینک‌شده داره → همون بدهکار رو استفاده کن (رکورد دوم ساخته نمی‌شه)
 //     - وگرنه یک بدهکار جدید بساز و از همون اول به این مشتری وصلش کن
 //  ۳. اگه شماره نداریم → مثل قبل، فقط بر اساس نام سعی می‌کنیم به مشتریِ موجود وصل بشیم
-//  ۴. اگه هیچ‌کدوم جواب نداد → یک بدهکار آزاد (بدون customerId) بساز — این فقط وقتی پیش میاد که
-//     اصلاً شماره‌ای در کار نبوده (بدون شماره نمی‌شه مطمئن بود این کیه)
+//  ۴. ⚠️ فیکس: اگه هنوز چیزی مچ نشد (معمولاً چون اصلاً شماره‌ای وارد نشده — خیلی رایج توی سهم‌های
+//     فاکتور تقسیم‌شده که کارمند فقط اسم هر نفر رو تایپ می‌کنه)، قبل از ساختن یک بدهکارِ جدید، دنبال
+//     یک بدهکارِ آزادِ *قبلی* (بدون customerId) با همین نامِ دقیق بگرد. بدون این مرحله، هر بار که
+//     برای همون شخصِ بدون‌شماره یک بدهیِ جدید ثبت می‌شد، یک رکوردِ تکراری ساخته می‌شد و بدهیِ واقعی‌ش
+//     بین چند رکورد پخش می‌شد (هرکدوم عددی کمتر از واقعیت نشون می‌داد).
+//  ۵. اگه هیچ‌کدوم جواب نداد → یک بدهکار آزاد (بدون customerId) بساز — این فقط وقتی پیش میاد که
+//     اصلاً شماره‌ای در کار نبوده و نامِ دقیقاً یکسانی هم قبلاً ثبت نشده
 export async function findOrCreateDebtor(input: DebtInput): Promise<number> {
   if (input.debtorId) {
     const [existing] = await db.select().from(debtors).where(eq(debtors.id, input.debtorId));
@@ -87,6 +92,13 @@ export async function findOrCreateDebtor(input: DebtInput): Promise<number> {
       })
       .returning();
     return created.id;
+  }
+
+  const normName = normalizeName(name);
+  if (normName) {
+    const allDebtors = await db.select().from(debtors);
+    const orphanMatch = allDebtors.find((d) => !d.customerId && normalizeName(d.name) === normName);
+    if (orphanMatch) return orphanMatch.id;
   }
 
   const [created] = await db.insert(debtors).values({ name, phone, totalDebt: "0" }).returning();

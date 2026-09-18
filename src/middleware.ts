@@ -37,6 +37,14 @@ const EMPLOYEE_ALLOWED: { method: string; pattern: RegExp }[] = [
   { method: "DELETE", pattern: /^\/api\/debtors\/\d+\/payments\/\d+$/ },
   { method: "PATCH", pattern: /^\/api\/debts\/\d+$/ },
   { method: "DELETE", pattern: /^\/api\/debts\/\d+$/ },
+  // طلبکاران: مشابه بدهکاران، برای همه (هم مدیر هم کارمند) باز است
+  { method: "GET", pattern: /^\/api\/creditors$/ },
+  { method: "POST", pattern: /^\/api\/creditors$/ },
+  { method: "PATCH", pattern: /^\/api\/creditors\/\d+$/ },
+  { method: "DELETE", pattern: /^\/api\/creditors\/\d+$/ },
+  { method: "POST", pattern: /^\/api\/creditors\/\d+\/transactions$/ },
+  { method: "PATCH", pattern: /^\/api\/creditors\/\d+\/transactions\/\d+$/ },
+  { method: "DELETE", pattern: /^\/api\/creditors\/\d+\/transactions\/\d+$/ },
   { method: "GET", pattern: /^\/api\/customers\/quick-summary$/ },
   // باشگاه مشتریان: دیدن/جستجو/افزودن برای همه باز است؛ ویرایش و حذف (PATCH/DELETE روی یک مشتری) هنوز فقط ادمین
   { method: "GET", pattern: /^\/api\/customers$/ },

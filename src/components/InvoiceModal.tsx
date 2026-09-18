@@ -99,6 +99,7 @@ export default function InvoiceModal({
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "debt">("card");
   const [invoiceStatus, setInvoiceStatus] = useState<"paid" | "debt" | "pending">("paid");
   const [notes, setNotes] = useState("");
+  const [opponentName, setOpponentName] = useState("");
   const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [customerDirectory, setCustomerDirectory] = useState<{ id: number; name: string; phone: string }[]>([]);
 
@@ -318,6 +319,7 @@ export default function InvoiceModal({
         tableId: table.id,
         customerName: customerName || null,
         customerPhone: customerPhone || null,
+        opponentName: opponentName || null,
         tableType: table.type,
         tableName: table.name,
         startTime: session.startTime,
@@ -470,6 +472,17 @@ export default function InvoiceModal({
             <label className="block text-sm text-slate-400 mb-1">شماره تلفن</label>
             <input className="form-input" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="09..." type="tel" dir="ltr" />
           </div>
+        </div>
+
+        {/* Opponent (optional) */}
+        <div>
+          <label className="block text-sm text-slate-400 mb-1">حریف (اختیاری)</label>
+          <CustomerNameAutocomplete
+            value={opponentName}
+            directory={customerDirectory}
+            placeholder="مثلاً اگه با یک نفر خاص بازی کرده — برای جلوگیری از اختلاف بعدی"
+            onChange={(name) => setOpponentName(name)}
+          />
         </div>
 
         {/* Cafe Items */}

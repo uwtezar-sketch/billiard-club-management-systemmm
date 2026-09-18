@@ -75,6 +75,27 @@ interface InvoiceDetail {
 
 const OVERDUE_DAYS = 14;
 
+interface CreditorTransaction {
+  id: number;
+  creditorId: number;
+  type: "credit" | "usage";
+  amount: string;
+  description: string | null;
+  jalaaliDate: string | null;
+  byUsername: string | null;
+  createdAt: string;
+}
+
+interface Creditor {
+  id: number;
+  name: string;
+  phone: string | null;
+  notes: string | null;
+  totalCredit: string;
+  createdAt: string;
+  transactions: CreditorTransaction[];
+}
+
 function daysSince(dateStr: string) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
 }
@@ -127,6 +148,25 @@ export default function DebtorsSection() {
   const [editPaymentModal, setEditPaymentModal] = useState<{ debtorId: number; payment: DebtorPayment } | null>(null);
   const [editPaymentForm, setEditPaymentForm] = useState({ amount: "", note: "" });
   const [deletePayment, setDeletePayment] = useState<{ debtorId: number; paymentId: number } | null>(null);
+
+  // ── خلوت کردنِ لیستِ بدهی/پرداخت هر بدهکار (نمایش تدریجی) ───────────────
+  const [showSettledFor, setShowSettledFor] = useState<Record<number, boolean>>({});
+  const [showAllUnpaidFor, setShowAllUnpaidFor] = useState<Record<number, boolean>>({});
+  const [showAllPaymentsFor, setShowAllPaymentsFor] = useState<Record<number, boolean>>({});
+  const UNPAID_PREVIEW_COUNT = 5;
+  const PAYMENT_PREVIEW_COUNT = 3;
+
+  // ── طلبکاران (کسانی که باشگاه بهشون بدهکاره) — بخش کوچکِ جدا از بدهکاران ─────
+  const [creditors, setCreditors] = useState<Creditor[]>([]);
+  const [creditorsOpen, setCreditorsOpen] = useState(false);
+  const [addCreditorModal, setAddCreditorModal] = useState(false);
+  const [creditorForm, setCreditorForm] = useState({ name: "", phone: "", amount: "", description: "" });
+  const [expandedCreditorId, setExpandedCreditorId] = useState<number | null>(null);
+  const [usageForm, setUsageForm] = useState<Record<number, { amount: string; description: string }>>({});
+  const [creditorLoading, setCreditorLoading] = useState(false);
+  const [deleteCreditorId, setDeleteCreditorId] = useState<number | null>(null);
+  const [convertModal, setConvertModal] = useState<Debtor | null>(null);
+  const [convertForm, setConvertForm] = useState({ name: "", phone: "", amount: "", clearDebt: true });
 
   async function handleSaveDebtEdit() {
     if (!editDebtModal) return;
@@ -401,6 +441,122 @@ export default function DebtorsSection() {
 
   const totalAllDebts = debtors.reduce((s, d) => s + Number(d.totalDebt), 0);
 
+  // ── طلبکاران ──────────────────────────────────────────────────────────
+  const fetchCreditors = useCallback(async () => {
+    try {
+      const res = await fetch("/api/creditors");
+      setCreditors(await res.json());
+    } catch {
+      // بی‌سروصدا نادیده بگیر — بخش کمکیه
+    }
+  }, []);
+
+  useEffect(() => { fetchCreditors(); }, [fetchCreditors]);
+
+  async function handleAddCreditor() {
+    if (!creditorForm.name) { showToast("نام الزامی است", "error"); return; }
+    setCreditorLoading(true);
+    try {
+      const res = await fetch("/api/creditors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: creditorForm.name,
+          phone: creditorForm.phone || null,
+          amount: creditorForm.amount ? Number(creditorForm.amount) : undefined,
+          description: creditorForm.description || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        showToast("طلبکار ثبت شد", "success");
+        setAddCreditorModal(false);
+        setCreditorForm({ name: "", phone: "", amount: "", description: "" });
+        fetchCreditors();
+      } else {
+        showToast(data.error || "خطا در ثبت طلبکار", "error");
+      }
+    } finally {
+      setCreditorLoading(false);
+    }
+  }
+
+  async function handleAddUsage(creditorId: number) {
+    const form = usageForm[creditorId];
+    const amount = Number(form?.amount || 0);
+    if (!amount || amount <= 0) {
+      showToast("مبلغ مصرف رو درست وارد کن", "error");
+      return;
+    }
+    setCreditorLoading(true);
+    try {
+      const res = await fetch(`/api/creditors/${creditorId}/transactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "usage", amount, description: form?.description || undefined }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        showToast("مصرف ثبت شد", "success");
+        setUsageForm((p) => ({ ...p, [creditorId]: { amount: "", description: "" } }));
+        fetchCreditors();
+      } else {
+        showToast(data.error || "خطا در ثبت مصرف", "error");
+      }
+    } finally {
+      setCreditorLoading(false);
+    }
+  }
+
+  async function handleDeleteCreditor() {
+    if (!deleteCreditorId) return;
+    await fetch(`/api/creditors/${deleteCreditorId}`, { method: "DELETE" });
+    showToast("طلبکار حذف شد", "success");
+    setDeleteCreditorId(null);
+    fetchCreditors();
+  }
+
+  async function handleConvertToCreditor() {
+    if (!convertModal || !convertForm.amount || Number(convertForm.amount) <= 0) {
+      showToast("مبلغ طلب رو درست وارد کن", "error");
+      return;
+    }
+    setCreditorLoading(true);
+    try {
+      const res = await fetch("/api/creditors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: convertForm.name,
+          phone: convertForm.phone || null,
+          amount: Number(convertForm.amount),
+          description: `انتقال از بدهکاران (${convertModal.name})`,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(data.error || "خطا در انتقال به طلبکاران", "error");
+        return;
+      }
+
+      if (convertForm.clearDebt) {
+        const unpaid = convertModal.debts.filter((d) => !d.isPaid);
+        await Promise.all(unpaid.map((d) => fetch(`/api/debts/${d.id}`, { method: "DELETE" })));
+      }
+
+      showToast("به طلبکاران منتقل شد", "success");
+      setConvertModal(null);
+      fetchData();
+      fetchCreditors();
+    } finally {
+      setCreditorLoading(false);
+    }
+  }
+
+  const totalAllCredits = creditors.reduce((s, c) => s + Number(c.totalCredit), 0);
+  const activeCreditors = creditors.filter((c) => Number(c.totalCredit) > 0);
+
+
   const enriched = debtors
     .map((d) => {
       const unpaidDebts = d.debts.filter((x) => !x.isPaid);
@@ -455,6 +611,118 @@ export default function DebtorsSection() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* طلبکاران — بخش کوچک و جمع‌وجور */}
+      <div className="rounded-xl" style={{ background: "#0d1f16", border: "1px solid #1a7a4c55" }}>
+        <div
+          className="flex items-center justify-between px-4 py-3 cursor-pointer"
+          onClick={() => setCreditorsOpen((o) => !o)}
+        >
+          <div className="flex items-center gap-2 font-bold" style={{ color: "#5ee89b" }}>
+            📗 طلبکاران
+            {activeCreditors.length > 0 && (
+              <span className="badge" style={{ background: "#0d3b2622", color: "#5ee89b" }}>
+                {activeCreditors.length.toLocaleString("fa-IR")} نفر — {formatPrice(totalAllCredits)}
+              </span>
+            )}
+          </div>
+          <span className="text-slate-400 text-sm">{creditorsOpen ? "▲" : "▼"}</span>
+        </div>
+
+        {creditorsOpen && (
+          <div className="px-4 pb-4 space-y-2">
+            <div className="text-xs text-slate-500">
+              کسانی که باشگاه بهشون بدهکاره — به‌جای پرداخت نقدی، با بازی یا مصرف کافه طلبشون کم می‌شه.
+            </div>
+
+            {creditors.length === 0 ? (
+              <div className="text-center text-slate-500 text-sm py-2">طلبکاری ثبت نشده</div>
+            ) : (
+              creditors.map((c) => {
+                const isOpen = expandedCreditorId === c.id;
+                const balance = Number(c.totalCredit);
+                return (
+                  <div key={c.id} className="rounded-lg" style={{ background: "#0e1512", border: "1px solid #1a7a4c33" }}>
+                    <div
+                      className="flex items-center justify-between px-3 py-2 cursor-pointer"
+                      onClick={() => setExpandedCreditorId(isOpen ? null : c.id)}
+                    >
+                      <div>
+                        <div className="text-white text-sm font-bold">{c.name}</div>
+                        {c.phone && <div className="text-xs text-slate-500" dir="ltr">📞 {c.phone}</div>}
+                      </div>
+                      <div className="font-bold text-sm" style={{ color: balance > 0 ? "#5ee89b" : "#64748b" }}>
+                        {formatPrice(balance)}
+                      </div>
+                    </div>
+
+                    {isOpen && (
+                      <div className="px-3 pb-3 space-y-2">
+                        <div className="flex gap-2">
+                          <input
+                            className="form-input flex-1"
+                            type="number"
+                            dir="ltr"
+                            placeholder="مبلغ مصرف‌شده (تومان)"
+                            value={usageForm[c.id]?.amount || ""}
+                            onChange={(e) => setUsageForm((p) => ({ ...p, [c.id]: { amount: e.target.value, description: p[c.id]?.description || "" } }))}
+                          />
+                          <button
+                            className="btn btn-success btn-sm"
+                            disabled={creditorLoading}
+                            onClick={() => handleAddUsage(c.id)}
+                          >
+                            ➖ ثبت مصرف
+                          </button>
+                        </div>
+                        <input
+                          className="form-input"
+                          placeholder="توضیح (اختیاری) — مثلاً یک ساعت بیلیارد"
+                          value={usageForm[c.id]?.description || ""}
+                          onChange={(e) => setUsageForm((p) => ({ ...p, [c.id]: { amount: p[c.id]?.amount || "", description: e.target.value } }))}
+                        />
+
+                        {c.transactions.length > 0 && (
+                          <div className="space-y-1 pt-1">
+                            {c.transactions.map((tx) => (
+                              <div key={tx.id} className="flex justify-between items-center text-xs rounded px-2 py-1.5" style={{ background: "#0d1f16" }}>
+                                <div>
+                                  <div className="text-slate-300">{tx.jalaaliDate}</div>
+                                  {tx.description && <div className="text-slate-500 mt-0.5">📝 {tx.description}</div>}
+                                </div>
+                                <span className="font-bold" style={{ color: tx.type === "credit" ? "#5ee89b" : "#f27f8a" }}>
+                                  {tx.type === "credit" ? "+" : "−"}{formatPrice(Number(tx.amount))}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="flex justify-end">
+                          <button
+                            className="btn btn-secondary btn-sm text-xs"
+                            style={{ color: "#f27f8a" }}
+                            onClick={() => setDeleteCreditorId(c.id)}
+                          >
+                            🗑 حذف طلبکار
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+
+            <button
+              className="btn btn-secondary btn-sm w-full"
+              onClick={() => { setCreditorForm({ name: "", phone: "", amount: "", description: "" }); setAddCreditorModal(true); }}
+            >
+              ➕ طلبکار جدید
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-3 flex-wrap">
@@ -548,75 +816,111 @@ export default function DebtorsSection() {
                   </div>
                 </div>
 
-                {isExpanded && (
+                {isExpanded && (() => {
+                  const debtsUnpaid = debtor.debts.filter((d) => !d.isPaid);
+                  const debtsPaid = debtor.debts.filter((d) => d.isPaid);
+                  const showAllUnpaid = showAllUnpaidFor[debtor.id] || false;
+                  const visibleUnpaid = showAllUnpaid ? debtsUnpaid : debtsUnpaid.slice(0, UNPAID_PREVIEW_COUNT);
+                  const hiddenUnpaidCount = debtsUnpaid.length - visibleUnpaid.length;
+                  const showSettled = showSettledFor[debtor.id] || false;
+                  const showAllPayments = showAllPaymentsFor[debtor.id] || false;
+                  const visiblePayments = showAllPayments ? debtor.payments : debtor.payments.slice(0, PAYMENT_PREVIEW_COUNT);
+                  const hiddenPaymentsCount = debtor.payments.length - visiblePayments.length;
+
+                  function renderDebtRow(debt: Debt) {
+                    return (
+                      <div
+                        key={debt.id}
+                        className="flex items-center justify-between rounded-lg px-3 py-2 text-sm"
+                        style={
+                          debt.isPaid
+                            ? { background: "#0d3b2622", border: "1px solid #1a7a4c55" }
+                            : { background: "#3d101622", border: "1px solid #8f1d2c55" }
+                        }
+                      >
+                        <div
+                          className={debt.invoiceId ? "cursor-pointer" : ""}
+                          onClick={() => debt.invoiceId && openInvoiceDetail(debt.invoiceId)}
+                        >
+                          <div className="text-white">
+                            {debt.description || "بدهی"}
+                            {debt.invoiceId && <span className="text-[10px] mr-1" style={{ color: "#5ecfe0" }}>🔍 جزئیات</span>}
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            {debt.jalaaliDate}
+                            {debt.invoiceNumber && ` | فاکتور ${debt.invoiceNumber}`}
+                          </div>
+                          {debt.isPaid && debt.paidAt && (
+                            <div className="text-xs" style={{ color: "#5ee89b" }}>
+                              تسویه: {new Date(debt.paidAt).toLocaleDateString("fa-IR")}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span style={{ color: debt.isPaid ? "#5ee89b" : "#f27f8a" }}>
+                            {formatPrice(Number(debt.amount))}
+                          </span>
+                          {!debt.isPaid && (
+                            <button
+                              className="btn btn-success btn-sm text-xs"
+                              onClick={() => setConfirmSettle({ open: true, debtorId: debtor.id, debtId: debt.id, all: false })}
+                            >
+                              ✅ تسویه
+                            </button>
+                          )}
+                          {debt.isPaid && (
+                            <button
+                              className="btn btn-secondary btn-sm text-xs"
+                              onClick={() => handleUndoSettleDebt(debt.id)}
+                              title="اگه اشتباهی تسویه زدی"
+                            >
+                              ↩️ برگردون
+                            </button>
+                          )}
+                          <button
+                            className="btn btn-secondary btn-sm text-xs"
+                            onClick={() => { setEditDebtForm({ amount: debt.amount, description: debt.description || "" }); setEditDebtModal(debt); }}
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            className="btn btn-secondary btn-sm text-xs"
+                            style={{ color: "#f27f8a" }}
+                            onClick={() => setDeleteDebtId(debt.id)}
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
                   <div className="mt-4 space-y-3">
                     {debtor.debts.length > 0 ? (
                       <div className="space-y-2">
-                        {debtor.debts.map((debt) => (
-                          <div
-                            key={debt.id}
-                            className="flex items-center justify-between rounded-lg px-3 py-2 text-sm"
-                            style={
-                              debt.isPaid
-                                ? { background: "#0d3b2622", border: "1px solid #1a7a4c55" }
-                                : { background: "#3d101622", border: "1px solid #8f1d2c55" }
-                            }
+                        {visibleUnpaid.map(renderDebtRow)}
+                        {debtsUnpaid.length === 0 && debtsPaid.length === 0 && (
+                          <div className="text-center text-slate-500 text-sm">ردیف بدهی وجود ندارد</div>
+                        )}
+                        {hiddenUnpaidCount > 0 && (
+                          <button
+                            className="btn btn-secondary btn-sm w-full text-xs"
+                            onClick={() => setShowAllUnpaidFor((p) => ({ ...p, [debtor.id]: true }))}
                           >
-                            <div
-                              className={debt.invoiceId ? "cursor-pointer" : ""}
-                              onClick={() => debt.invoiceId && openInvoiceDetail(debt.invoiceId)}
-                            >
-                              <div className="text-white">
-                                {debt.description || "بدهی"}
-                                {debt.invoiceId && <span className="text-[10px] mr-1" style={{ color: "#5ecfe0" }}>🔍 جزئیات</span>}
-                              </div>
-                              <div className="text-xs text-slate-400">
-                                {debt.jalaaliDate}
-                                {debt.invoiceNumber && ` | فاکتور ${debt.invoiceNumber}`}
-                              </div>
-                              {debt.isPaid && debt.paidAt && (
-                                <div className="text-xs" style={{ color: "#5ee89b" }}>
-                                  تسویه: {new Date(debt.paidAt).toLocaleDateString("fa-IR")}
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span style={{ color: debt.isPaid ? "#5ee89b" : "#f27f8a" }}>
-                                {formatPrice(Number(debt.amount))}
-                              </span>
-                              {!debt.isPaid && (
-                                <button
-                                  className="btn btn-success btn-sm text-xs"
-                                  onClick={() => setConfirmSettle({ open: true, debtorId: debtor.id, debtId: debt.id, all: false })}
-                                >
-                                  ✅ تسویه
-                                </button>
-                              )}
-                              {debt.isPaid && (
-                                <button
-                                  className="btn btn-secondary btn-sm text-xs"
-                                  onClick={() => handleUndoSettleDebt(debt.id)}
-                                  title="اگه اشتباهی تسویه زدی"
-                                >
-                                  ↩️ برگردون
-                                </button>
-                              )}
-                              <button
-                                className="btn btn-secondary btn-sm text-xs"
-                                onClick={() => { setEditDebtForm({ amount: debt.amount, description: debt.description || "" }); setEditDebtModal(debt); }}
-                              >
-                                ✏️
-                              </button>
-                              <button
-                                className="btn btn-secondary btn-sm text-xs"
-                                style={{ color: "#f27f8a" }}
-                                onClick={() => setDeleteDebtId(debt.id)}
-                              >
-                                🗑️
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+                            نمایش {hiddenUnpaidCount.toLocaleString("fa-IR")} مورد بدهیِ دیگر
+                          </button>
+                        )}
+
+                        {debtsPaid.length > 0 && (
+                          <button
+                            className="btn btn-secondary btn-sm w-full text-xs"
+                            onClick={() => setShowSettledFor((p) => ({ ...p, [debtor.id]: !showSettled }))}
+                          >
+                            {showSettled ? "▲ پنهان کردن تسویه‌شده‌ها" : `▼ نمایش تسویه‌شده‌ها (${debtsPaid.length.toLocaleString("fa-IR")})`}
+                          </button>
+                        )}
+                        {showSettled && debtsPaid.map(renderDebtRow)}
                       </div>
                     ) : (
                       <div className="text-center text-slate-500 text-sm">ردیف بدهی وجود ندارد</div>
@@ -658,7 +962,7 @@ export default function DebtorsSection() {
 
                       {debtor.payments.length > 0 && (
                         <div className="space-y-1 pt-1">
-                          {debtor.payments.map((pmt) => (
+                          {visiblePayments.map((pmt) => (
                             <div key={pmt.id} className="flex justify-between items-center text-xs rounded px-2 py-1.5" style={{ background: "#0e1512" }}>
                               <div>
                                 <div className="text-slate-300">{toJalaaliFullLabel(new Date(pmt.createdAt))}</div>
@@ -682,6 +986,14 @@ export default function DebtorsSection() {
                               </div>
                             </div>
                           ))}
+                          {hiddenPaymentsCount > 0 && (
+                            <button
+                              className="btn btn-secondary btn-sm w-full text-xs"
+                              onClick={() => setShowAllPaymentsFor((p) => ({ ...p, [debtor.id]: true }))}
+                            >
+                              نمایش {hiddenPaymentsCount.toLocaleString("fa-IR")} پرداخت دیگر
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -709,6 +1021,16 @@ export default function DebtorsSection() {
                       </button>
                       <button
                         className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          setConvertForm({ name: debtor.name, phone: debtor.phone || "", amount: unpaidTotal > 0 ? String(unpaidTotal) : "", clearDebt: true });
+                          setConvertModal(debtor);
+                        }}
+                        title="اگه معلوم شد در واقع این شخص از ما طلب داره، نه اینکه بهمون بدهکار باشه"
+                      >
+                        🔁 انتقال به طلبکاران
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm"
                         onClick={() => { setEditForm({ name: debtor.name, phone: debtor.phone || "", notes: debtor.notes || "" }); setEditDebtorModal(debtor); }}
                       >
                         ✏️ ویرایش
@@ -721,7 +1043,8 @@ export default function DebtorsSection() {
                       </button>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
               </div>
             );
           })}
@@ -779,6 +1102,69 @@ export default function DebtorsSection() {
           <div className="flex gap-3">
             <button className="btn btn-secondary flex-1" onClick={() => setAddDebtModal(null)}>انصراف</button>
             <button className="btn btn-primary flex-1" onClick={handleAddDebt} disabled={loading}>ثبت بدهی</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Add Creditor Modal */}
+      <Modal open={addCreditorModal} onClose={() => setAddCreditorModal(false)} title="طلبکار جدید">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">نام *</label>
+            <CustomerNameAutocomplete
+              value={creditorForm.name}
+              directory={customerDirectory}
+              onChange={(name, phone) => setCreditorForm((p) => ({ ...p, name, phone: phone && !p.phone ? phone : p.phone }))}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">شماره تلفن</label>
+            <input className="form-input" type="tel" dir="ltr" value={creditorForm.phone} onChange={(e) => setCreditorForm((p) => ({ ...p, phone: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">مبلغ طلب (تومان)</label>
+            <input className="form-input" type="number" dir="ltr" value={creditorForm.amount} onChange={(e) => setCreditorForm((p) => ({ ...p, amount: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">توضیح (اختیاری)</label>
+            <input className="form-input" value={creditorForm.description} onChange={(e) => setCreditorForm((p) => ({ ...p, description: e.target.value }))} />
+          </div>
+          <div className="flex gap-3">
+            <button className="btn btn-secondary flex-1" onClick={() => setAddCreditorModal(false)}>انصراف</button>
+            <button className="btn btn-primary flex-1" onClick={handleAddCreditor} disabled={creditorLoading}>ثبت</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Convert debtor → creditor Modal */}
+      <Modal open={!!convertModal} onClose={() => setConvertModal(null)} title={`انتقال «${convertModal?.name || ""}» به طلبکاران`}>
+        <div className="space-y-4">
+          <div className="text-xs text-slate-500">
+            یعنی معلوم شده در واقع این شخص از باشگاه طلب داره، نه اینکه بدهکار باشه.
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">نام</label>
+            <input className="form-input" value={convertForm.name} onChange={(e) => setConvertForm((p) => ({ ...p, name: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">شماره تلفن</label>
+            <input className="form-input" type="tel" dir="ltr" value={convertForm.phone} onChange={(e) => setConvertForm((p) => ({ ...p, phone: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">مبلغ طلب (تومان) *</label>
+            <input className="form-input" type="number" dir="ltr" value={convertForm.amount} onChange={(e) => setConvertForm((p) => ({ ...p, amount: e.target.value }))} />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={convertForm.clearDebt}
+              onChange={(e) => setConvertForm((p) => ({ ...p, clearDebt: e.target.checked }))}
+            />
+            بدهی‌های باز این شخص هم پاک بشه (چون در واقع بدهی نبوده)
+          </label>
+          <div className="flex gap-3">
+            <button className="btn btn-secondary flex-1" onClick={() => setConvertModal(null)}>انصراف</button>
+            <button className="btn btn-primary flex-1" onClick={handleConvertToCreditor} disabled={creditorLoading}>انتقال</button>
           </div>
         </div>
       </Modal>
@@ -1007,6 +1393,13 @@ export default function DebtorsSection() {
         message="آیا از حذف این بدهکار و تمام بدهی‌های او مطمئنید؟"
         onConfirm={handleDelete}
         onCancel={() => setDeleteId(null)}
+        danger
+      />
+      <ConfirmDialog
+        open={!!deleteCreditorId}
+        message="آیا از حذف این طلبکار و تمام تراکنش‌هایش مطمئنید؟"
+        onConfirm={handleDeleteCreditor}
+        onCancel={() => setDeleteCreditorId(null)}
         danger
       />
     </div>

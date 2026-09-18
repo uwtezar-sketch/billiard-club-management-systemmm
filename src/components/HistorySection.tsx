@@ -51,6 +51,7 @@ interface Invoice {
   isSplit: boolean;
   shares: ShareItem[];
   notes: string | null;
+  opponentName: string | null;
   issuedAt: string;
   issuedByUsername: string | null;
   settledAt: string | null;
@@ -120,6 +121,7 @@ export default function HistorySection() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [editCustomerName, setEditCustomerName] = useState("");
   const [editCustomerPhone, setEditCustomerPhone] = useState("");
+  const [editOpponentName, setEditOpponentName] = useState("");
   const [pendingAll, setPendingAll] = useState<Invoice[]>([]);
   const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
   const [bulkSettlingKey, setBulkSettlingKey] = useState<string | null>(null);
@@ -174,6 +176,7 @@ export default function HistorySection() {
       setEditNewDebtorPhone(selectedInvoice.customerPhone || "");
       setEditCustomerName(selectedInvoice.customerName || "");
       setEditCustomerPhone(selectedInvoice.customerPhone || "");
+      setEditOpponentName(selectedInvoice.opponentName || "");
       setEditingItems(false);
     }
   }, [selectedInvoice]);
@@ -297,6 +300,7 @@ export default function HistorySection() {
     const body: Record<string, unknown> = {
       customerName: editCustomerName || null,
       customerPhone: editCustomerPhone || null,
+      opponentName: editOpponentName || null,
     };
 
     // فاکتورهای تقسیم‌شده روش پرداخت/وضعیت واحد ندارن (هر سهم جدا مدیریت می‌شه بالاتر)،
@@ -913,6 +917,11 @@ export default function HistorySection() {
                         🤝 یار بازی: {partnerLabel}
                       </div>
                     )}
+                    {inv.opponentName && (
+                      <div className="text-xs mt-0.5" style={{ color: "#e0b23a" }}>
+                        🎱 حریف: {inv.opponentName}
+                      </div>
+                    )}
                     <div className="text-xs text-slate-400 flex gap-3 flex-wrap mt-1">
                       {inv.tableName && <span>{TYPE_MAP[inv.tableType || ""] || ""} {inv.tableName}</span>}
                       {inv.durationMinutes && <span>⏱ {formatDuration(inv.durationMinutes)}</span>}
@@ -961,6 +970,15 @@ export default function HistorySection() {
                   <label className="block text-[10px] text-slate-500 mb-1">تلفن</label>
                   <input className="form-input" value={editCustomerPhone} onChange={(e) => setEditCustomerPhone(e.target.value)} dir="ltr" placeholder="—" />
                 </div>
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-500 mb-1">حریف (اختیاری)</label>
+                <CustomerNameAutocomplete
+                  value={editOpponentName}
+                  directory={customerDirectory}
+                  placeholder="بدون حریف مشخص"
+                  onChange={(name) => setEditOpponentName(name)}
+                />
               </div>
               <div className="text-[10px] text-slate-600">این با دکمه‌ی «ذخیره تغییرات» پایین صفحه ثبت می‌شه.</div>
             </div>

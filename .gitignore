@@ -4,3 +4,9 @@
 node_modules
 .next
 seed.mjs
+
+# macOS
+.DS_Store
+
+# TypeScript build info
+*.tsbuildinfo

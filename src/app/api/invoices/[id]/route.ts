@@ -33,7 +33,7 @@ export async function PATCH(
     const { id } = await params;
     const invoiceId = parseInt(id);
     const body = await req.json();
-    const { status, settledAt, paymentMethod, debtorId, newDebtorName, newDebtorPhone, customerName, customerPhone } = body;
+    const { status, settledAt, paymentMethod, debtorId, newDebtorName, newDebtorPhone, customerName, customerPhone, opponentName } = body;
 
     const [existing] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
     if (!existing) return NextResponse.json({ error: "فاکتور یافت نشد" }, { status: 404 });
@@ -51,6 +51,7 @@ export async function PATCH(
     if (settledAt !== undefined) updateData.settledAt = settledAt ? new Date(settledAt) : new Date();
     if (customerName !== undefined) updateData.customerName = customerName || null;
     if (customerPhone !== undefined) updateData.customerPhone = customerPhone || null;
+    if (opponentName !== undefined) updateData.opponentName = opponentName || null;
 
     // اگه شماره‌ی مشتری همین‌جا ثبت/تغییر کرد، مطمئن می‌شیم تو باشگاه مشتریان هم ثبت باشه —
     // مستقل از اینکه این فاکتور بدهی می‌شه یا نه.

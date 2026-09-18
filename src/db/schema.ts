@@ -78,6 +78,7 @@ export const invoices = pgTable("invoices", {
   isPartial: boolean("is_partial").notNull().default(false),
   isSplit: boolean("is_split").notNull().default(false),
   notes: text("notes"),
+  opponentName: text("opponent_name"), // حریفی که مشتری باهاش بازی کرده — اختیاری، فقط برای مستندسازی/جزئیات فاکتور
   issuedByUsername: text("issued_by_username"),
   issuedAt: timestamp("issued_at").notNull().defaultNow(),
   settledAt: timestamp("settled_at"),
@@ -252,5 +253,31 @@ export const customerPointRedemptions = pgTable("customer_point_redemptions", {
   valueApplied: numeric("value_applied", { precision: 12, scale: 2 }), // مبلغ تومانیِ واقعیِ اعمال‌شده (points × effectivePointValue وقتِ ثبت)
   invoiceId: integer("invoice_id").references(() => invoices.id), // اگه این استفاده از امتیاز مالِ یک فاکتور مشخص بوده
   kind: text("kind"), // 'redeem' (پیش‌فرض، یعنی null هم همینه) | 'adjustment' (هدیه/تنظیم دستیِ مدیر، مقدارِ points می‌تونه منفی باشه)
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ─── Creditors (طلبکاران — کسانی که باشگاه بهشون بدهکاره، نه برعکس) ───────────
+// بعضی مشتری‌ها به‌جای اینکه پول نقد پس بگیرن، اجازه می‌دن طلبشون رو با بازی/مصرفِ کافه توی باشگاه
+// جبران کنن. این بخش عمداً ساده نگه داشته شده: فقط یک لیست کوچیک از مانده‌طلب هر نفر که با هر بار
+// «مصرف» کم می‌شه — قرار نیست به فاکتورها یا حساب‌های دیگه وصل بشه.
+export const creditors = pgTable("creditors", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  phone: varchar("phone", { length: 20 }),
+  notes: text("notes"),
+  totalCredit: numeric("total_credit", { precision: 12, scale: 2 }).notNull().default("0"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// هر ردیف یا شارژِ طلب (type='credit' — مثلاً وقتی یک بدهی رو به اینجا منتقل می‌کنیم) هست،
+// یا مصرفِ همون طلب در باشگاه/کافه (type='usage')
+export const creditorTransactions = pgTable("creditor_transactions", {
+  id: serial("id").primaryKey(),
+  creditorId: integer("creditor_id").notNull().references(() => creditors.id),
+  type: text("type").notNull(), // 'credit' | 'usage'
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  description: text("description"),
+  jalaaliDate: text("jalaali_date"),
+  byUsername: text("by_username"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

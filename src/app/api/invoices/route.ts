@@ -103,6 +103,7 @@ export async function POST(req: NextRequest) {
       status,
       isPartial,
       notes,
+      opponentName,
       shares,
       manualTotal,
     } = body;
@@ -168,6 +169,7 @@ export async function POST(req: NextRequest) {
         isPartial: isPartial || false,
         isSplit,
         notes: notes || null,
+        opponentName: opponentName || null,
         issuedByUsername: currentUser?.username || null,
         jalaaliDate,
         settledAt: !isSplit && status === "paid" ? new Date() : null,
