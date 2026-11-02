@@ -1,11 +1,12 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Modal from "./Modal";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./Toast";
 import { formatDuration, calcPrice, formatPrice, toJalaali } from "@/lib/jalaali";
 import InvoiceModal from "./InvoiceModal";
 import CustomerNameAutocomplete from "./CustomerNameAutocomplete";
+import { startTablePolling } from "@/lib/tablePolling";
 
 interface Table {
   id: number;
@@ -139,15 +140,20 @@ export default function TablesSection({ onRefreshNeeded }: { onRefreshNeeded?: (
   const [customerDirectory, setCustomerDirectory] = useState<{ name: string; phone: string }[]>([]);
 
   useEffect(() => {
-    fetch("/api/customers")
+    fetch("/api/customers?directory=1")
       .then((r) => r.json())
       .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { name: string; phone: string }) => ({ name: c.name, phone: c.phone })) : []))
       .catch(() => {});
   }, []);
 
-const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [syncFailed, setSyncFailed] = useState(false);
+  const [syncPaused, setSyncPaused] = useState(false);
+  // Unknown/failed data must keep retrying rather than being treated as an empty club.
+  const hasActiveWork = useRef(true);
+  const readQueue = useRef<Promise<void> | null>(null);
+  const polling = useRef<ReturnType<typeof startTablePolling> | null>(null);
   // Modals
   const [startModal, setStartModal] = useState<{ open: boolean; table: Table | null }>({ open: false, table: null });
   const [sessionModal, setSessionModal] = useState<{ open: boolean; table: Table | null; session: Session | null; cafeOrders: CafeOrder[] }>({
@@ -175,32 +181,59 @@ const [loading, setLoading] = useState(true);
   const [editCustomer, setEditCustomer] = useState("");
   const [editNotes, setEditNotes] = useState("");
 
-  const fetchData = useCallback(async () => {
-    try {
-      const [tablesRes, menuRes, settingsRes, reservationsRes] = await Promise.all([
-        fetch("/api/tables"),
-        fetch("/api/cafe"),
-        fetch("/api/settings"),
-        fetch("/api/reservations?status=registered"),
-      ]);
-      setTables(await tablesRes.json());
-      setMenuItems(await menuRes.json());
-      setSettings(await settingsRes.json());
-      setReservations(await reservationsRes.json());
-      setLastSync(new Date());
-      setSyncFailed(false);
-    } catch {
-      setSyncFailed(true);
-      showToast("خطا در دریافت اطلاعات", "error");
-    } finally {
-      setLoading(false);
-    }
+  const fetchData = useCallback((): Promise<void> => {
+    // Serialize manual reads after an in-flight poll, so a mutation can fetch fresh data.
+    const request = (readQueue.current ?? Promise.resolve()).then(async () => {
+      try {
+        const [tablesRes, menuRes, settingsRes, reservationsRes] = await Promise.all([
+          fetch("/api/tables"),
+          fetch("/api/cafe"),
+          fetch("/api/settings"),
+          fetch("/api/reservations?status=registered"),
+        ]);
+        if (![tablesRes, menuRes, settingsRes, reservationsRes].every((response) => response.ok)) {
+          throw new Error("sync_failed");
+        }
+        const [tableData, menuData, settingData, reservationData] = await Promise.all([
+          tablesRes.json(), menuRes.json(), settingsRes.json(), reservationsRes.json(),
+        ]);
+        if (!Array.isArray(tableData) || !Array.isArray(menuData) || !Array.isArray(reservationData) ||
+            !settingData || typeof settingData !== "object" || Array.isArray(settingData)) {
+          throw new Error("invalid_sync_response");
+        }
+        setTables(tableData);
+        setMenuItems(menuData);
+        setSettings(settingData);
+        setReservations(reservationData);
+        hasActiveWork.current = tableData.some((table: Table) => table.isActive || table.activeSession?.status === "active");
+        setLastSync(new Date());
+        setSyncFailed(false);
+      } catch {
+        hasActiveWork.current = true;
+        setSyncFailed(true);
+        showToast("خطا در دریافت اطلاعات", "error");
+      } finally {
+        setLoading(false);
+      }
+    });
+    readQueue.current = request;
+    void request.finally(() => {
+      if (readQueue.current === request) readQueue.current = null;
+    });
+    return request;
   }, [showToast]);
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 60000);
-    return () => clearInterval(interval);
+    const controller = startTablePolling({
+      refresh: fetchData,
+      hasActiveWork: () => hasActiveWork.current,
+      onPaused: setSyncPaused,
+    });
+    polling.current = controller;
+    return () => {
+      controller.stop();
+      polling.current = null;
+    };
   }, [fetchData]);
 
   function getDefaultPrice(type: string) {
@@ -424,9 +457,14 @@ const [loading, setLoading] = useState(true);
       <div className="flex items-center justify-between text-xs">
         {syncFailed ? (
           <span style={{ color: "#f27f8a" }}>⚠️ عدم اتصال — داده‌ها ممکنه قدیمی باشن</span>
+        ) : syncPaused ? (
+          <span className="text-amber-300">همگام‌سازی خودکار متوقف است؛ برای دریافت وضعیت تازه بروزرسانی کنید</span>
         ) : (
           <span className="text-slate-500">🟢 بروزرسانی: {secondsAgoLabel}</span>
         )}
+        <button type="button" className="btn btn-secondary shrink-0 mr-2" onClick={() => polling.current?.refreshNow()}>
+          بروزرسانی
+        </button>
       </div>
 
       {/* Snooker Tables */}

@@ -279,7 +279,7 @@ export default function DebtorsSection() {
 
   useEffect(() => {
     fetchMergeSuggestions();
-    fetch("/api/customers").then((r) => r.json()).then((d) => setCustomerDirectory(Array.isArray(d) ? d : []));
+    fetch("/api/customers?directory=1").then((r) => r.json()).then((d) => setCustomerDirectory(Array.isArray(d) ? d : []));
   }, [fetchMergeSuggestions]);
 
   async function handleMergeToCustomer(debtorId: number, customerId: number) {

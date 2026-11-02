@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { debtors, debts, customers, debtorPayments } from "@/db/schema";
-import { eq, like, desc } from "drizzle-orm";
+import { eq, like, desc, inArray } from "drizzle-orm";
 import { isSamePerson } from "@/lib/personMatch";
 import { ensureCustomerExists } from "@/lib/customerLink";
 
@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get("search");
 
     const allDebtors = await db.select().from(debtors).orderBy(desc(debtors.createdAt));
-    const allCustomers = await db.select().from(customers);
+    const allCustomers = await db.select({ id: customers.id, name: customers.name }).from(customers);
     const customerById = new Map(allCustomers.map((c) => [c.id, c]));
 
     const filtered = search
@@ -20,22 +20,20 @@ export async function GET(req: NextRequest) {
         )
       : allDebtors;
 
-    const withDebts = await Promise.all(
-      filtered.map(async (debtor) => {
-        const debtRows = await db
-          .select()
-          .from(debts)
-          .where(eq(debts.debtorId, debtor.id))
-          .orderBy(desc(debts.createdAt));
-        const paymentRows = await db
-          .select()
-          .from(debtorPayments)
-          .where(eq(debtorPayments.debtorId, debtor.id))
-          .orderBy(desc(debtorPayments.createdAt));
-        const linkedCustomer = debtor.customerId ? customerById.get(debtor.customerId) : null;
-        return { ...debtor, debts: debtRows, payments: paymentRows, customerName: linkedCustomer?.name || null };
-      })
-    );
+    const debtorIds = filtered.map((debtor) => debtor.id);
+    const [debtRows, paymentRows] = await Promise.all([
+      debtorIds.length ? db.select().from(debts).where(inArray(debts.debtorId, debtorIds)).orderBy(desc(debts.createdAt)) : [],
+      debtorIds.length ? db.select().from(debtorPayments).where(inArray(debtorPayments.debtorId, debtorIds)).orderBy(desc(debtorPayments.createdAt)) : [],
+    ]);
+    const withDebts = filtered.map((debtor) => {
+      const linkedCustomer = debtor.customerId ? customerById.get(debtor.customerId) : null;
+      return {
+        ...debtor,
+        debts: debtRows.filter((debt) => debt.debtorId === debtor.id),
+        payments: paymentRows.filter((payment) => payment.debtorId === debtor.id),
+        customerName: linkedCustomer?.name || null,
+      };
+    });
 
     return NextResponse.json(withDebts);
   } catch (e) {
