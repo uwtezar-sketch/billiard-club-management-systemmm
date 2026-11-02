@@ -50,23 +50,12 @@ export default function Home() {
 
   const fetchCounts = useCallback(async () => {
     try {
-      const [tablesRes, debtorsRes, pendingRes] = await Promise.all([
-        fetch("/api/tables"),
-        fetch("/api/debtors"),
-        fetch("/api/invoices?status=pending"),
-      ]);
-      const tablesData = await tablesRes.json();
-      if (Array.isArray(tablesData)) {
-        setActiveTablesCount(tablesData.filter((t: { isActive: boolean }) => t.isActive).length);
-      }
-      const debtorsData = await debtorsRes.json();
-      if (Array.isArray(debtorsData)) {
-        setUnpaidDebtorsCount(debtorsData.filter((d: { totalDebt: string }) => Number(d.totalDebt) > 0).length);
-      }
-      const pendingData = await pendingRes.json();
-      if (Array.isArray(pendingData)) {
-        setPendingInvoicesCount(pendingData.length);
-      }
+      const response = await fetch("/api/navigation-summary", { cache: "no-store" });
+      if (!response.ok) return;
+      const summary = await response.json();
+      setActiveTablesCount(summary.activeTablesCount);
+      setUnpaidDebtorsCount(summary.unpaidDebtorsCount);
+      setPendingInvoicesCount(summary.pendingInvoicesCount);
     } catch {
       // بی‌سروصدا نادیده گرفته میشه، این فقط یه نشونه‌ی کوچیکه
     }
@@ -104,6 +93,7 @@ useEffect(() => {
     setIsRefreshing(true);
     try {
       updateClock();
+      window.dispatchEvent(new Event("eram:refresh"));
       await fetchCounts();
     } finally {
       setIsRefreshing(false);
@@ -264,7 +254,7 @@ useEffect(() => {
 
         {/* Main Content */}
         <main className="flex-1 overflow-y-auto p-4">
-          {activeTab === "tables" && <TablesSection />}
+          {activeTab === "tables" && <TablesSection onRefreshNeeded={fetchCounts} />}
           {activeTab === "cafe" && <CafeSection />}
           {activeTab === "reservations" && <ReservationsSection />}
           {activeTab === "debtors" && <DebtorsSection />}

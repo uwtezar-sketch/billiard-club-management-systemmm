@@ -1,7 +1,10 @@
+import "dotenv/config";
 import { Pool } from "pg";
 
+if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
+
 const pool = new Pool({
-  connectionString: "postgresql://neondb_owner:npg_lyzS87gWZBhG@ep-mute-math-as2z2v3e.c-4.eu-central-1.aws.neon.tech/neondb?sslmode=require",
+  connectionString: process.env.DATABASE_URL,
 });
 
 async function seed() {

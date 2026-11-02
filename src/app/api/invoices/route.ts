@@ -53,18 +53,17 @@ export async function GET(req: NextRequest) {
       : allInvoices;
 
     // Attach items + shares (سهم‌ها فقط برای فاکتورهای تقسیم‌شده وجود دارن)
-    const withItems = await Promise.all(
-      filtered.map(async (inv) => {
-        const items = await db
-          .select()
-          .from(invoiceItems)
-          .where(eq(invoiceItems.invoiceId, inv.id));
-        const shares = inv.isSplit
-          ? await db.select().from(invoiceShares).where(eq(invoiceShares.invoiceId, inv.id))
-          : [];
-        return { ...inv, items, shares };
-      })
-    );
+    const invoiceIds = filtered.map((inv) => inv.id);
+    const splitIds = filtered.filter((inv) => inv.isSplit).map((inv) => inv.id);
+    const [items, shares] = await Promise.all([
+      invoiceIds.length ? db.select().from(invoiceItems).where(inArray(invoiceItems.invoiceId, invoiceIds)) : [],
+      splitIds.length ? db.select().from(invoiceShares).where(inArray(invoiceShares.invoiceId, splitIds)) : [],
+    ]);
+    const withItems = filtered.map((inv) => ({
+      ...inv,
+      items: items.filter((item) => item.invoiceId === inv.id),
+      shares: inv.isSplit ? shares.filter((share) => share.invoiceId === inv.id) : [],
+    }));
 
     // برای فاکتورهای تقسیم‌شده، فقط اگه واقعاً یک سهم «در انتظار» داشته باشن جزو لیست معلق‌ها بمونن
     const finalList =

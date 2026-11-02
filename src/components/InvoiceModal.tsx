@@ -104,7 +104,7 @@ export default function InvoiceModal({
   const [customerDirectory, setCustomerDirectory] = useState<{ id: number; name: string; phone: string }[]>([]);
 
   useEffect(() => {
-    fetch("/api/customers")
+    fetch("/api/customers?directory=1")
       .then((r) => r.json())
       .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { id: number; name: string; phone: string }) => ({ id: c.id, name: c.name, phone: c.phone })) : []))
       .catch(() => {});

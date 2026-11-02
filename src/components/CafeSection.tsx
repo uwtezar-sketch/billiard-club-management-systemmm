@@ -56,7 +56,7 @@ export default function CafeSection() {
   const [customerDirectory, setCustomerDirectory] = useState<{ name: string; phone: string }[]>([]);
 
   useEffect(() => {
-    fetch("/api/customers")
+    fetch("/api/customers?directory=1")
       .then((r) => r.json())
       .then((d) => setCustomerDirectory(Array.isArray(d) ? d.map((c: { name: string; phone: string }) => ({ name: c.name, phone: c.phone })) : []))
       .catch(() => {});

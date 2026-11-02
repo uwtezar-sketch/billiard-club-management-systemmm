@@ -10,3 +10,5 @@ seed.mjs
 
 # TypeScript build info
 *.tsbuildinfo
+.test-build/
+!.env.example

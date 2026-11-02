@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 const PUBLIC_PATHS = ["/login", "/api/auth/login", "/manifest.json"];
 
 const EMPLOYEE_ALLOWED: { method: string; pattern: RegExp }[] = [
+  { method: "GET", pattern: /^\/api\/navigation-summary$/ },
   { method: "GET", pattern: /^\/api\/tables$/ },
   { method: "GET", pattern: /^\/api\/cafe$/ },
   { method: "GET", pattern: /^\/api\/settings$/ },

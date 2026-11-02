@@ -16,6 +16,18 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const search = searchParams.get("search");
 
+    // Autocomplete needs identity fields only, not every invoice and loyalty calculation.
+    if (searchParams.get("directory") === "1") {
+      const directory = await db.select({
+        id: customers.id,
+        name: customers.name,
+        phone: customers.phone,
+      }).from(customers);
+      return NextResponse.json(directory, {
+        headers: { "Cache-Control": "private, no-store" },
+      });
+    }
+
     const allCustomers = search
       ? await db
           .select()
