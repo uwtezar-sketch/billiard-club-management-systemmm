@@ -12,3 +12,10 @@ seed.mjs
 *.tsbuildinfo
 .test-build/
 !.env.example
+backups/
+.backup-keys/
+.backup-config/
+*.agekey
+*.dump
+*.dump.age
+__pycache__/
