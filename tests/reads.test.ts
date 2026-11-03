@@ -6,6 +6,7 @@ import { GET as invoicesGet } from "../src/app/api/invoices/route";
 import { GET as debtorsGet } from "../src/app/api/debtors/route";
 import { GET as customersGet } from "../src/app/api/customers/route";
 import { GET as summaryGet } from "../src/app/api/navigation-summary/route";
+import { GET as backupGet } from "../src/app/api/backup/route";
 import { middleware } from "../src/middleware";
 import { createSessionToken } from "../src/lib/auth";
 import * as schema from "../src/db/schema";
@@ -124,4 +125,30 @@ test("summary remains authenticated and only GET is allowed to employees", () =>
   assert.equal(middleware(get).status, 200);
   const post = new NextRequest("https://test.invalid/api/navigation-summary", { method: "POST", headers: { cookie: `session=${token}` } });
   assert.equal(middleware(post).status, 403);
+});
+
+test("manual JSON export includes all 20 tables in a read-only snapshot and omits login hashes", async () => {
+  await db.insert(schema.users).values({ username: "TEST_BACKUP_USER", passwordHash: "TEST_HASH_NOT_A_REAL_CREDENTIAL", role: "admin" });
+  await db.insert(schema.creditors).values({ id: 1, name: "TEST_CREDITOR", totalCredit: "99.25" });
+  await db.insert(schema.creditorTransactions).values({ creditorId: 1, type: "credit", amount: "99.25" });
+  await db.insert(schema.customerPointRedemptions).values({ customerId: 1, points: 5, note: "TEST_REDEMPTION" });
+  await db.insert(schema.activityLogs).values({ action: "TEST_BACKUP", entityType: "test" });
+  queries.length = 0;
+  const response = await backupGet();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  const backup = await response.json();
+  assert.equal(backup.version, 3);
+  assert.equal(Object.keys(backup.data).length, 20);
+  assert.equal(backup.data.creditors[0].totalCredit, "99.25");
+  assert.equal(backup.data.creditorTransactions[0].amount, "99.25");
+  assert.equal(backup.data.customerPointRedemptions[0].points, 5);
+  assert.equal(backup.data.activityLogs[0].action, "TEST_BACKUP");
+  assert.equal("passwordHash" in backup.data.users[0], false);
+  assert.equal(JSON.stringify(backup).includes("TEST_HASH_NOT_A_REAL_CREDENTIAL"), false);
+  assert.ok(queries.some((query) => /repeatable read.*read only/i.test(query)));
+  const token = createSessionToken({ uid: 1, username: "TEST_EMPLOYEE", role: "employee", exp: Date.now() + 60_000 });
+  const employeeRequest = new NextRequest("https://test.invalid/api/backup", { headers: { cookie: `session=${token}` } });
+  assert.equal(middleware(employeeRequest).status, 403);
+  assert.equal(middleware(request("/api/backup")).status, 401);
 });
